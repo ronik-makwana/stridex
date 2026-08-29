@@ -1,0 +1,22 @@
+{
+  "name": "shoe",
+  "private": true,
+  "type": "module",
+  "workspaces": ["apps/*", "packages/*"],
+  "engines": { "node": ">=22.0.0" },
+  "scripts": {
+    "dev:api": "npm run dev -w apps/api",
+    "dev:admin": "npm run dev -w apps/admin",
+    "dev:shop": "npm run dev -w apps/storefront",
+    "build:api": "npm run build -w apps/api",
+    "build:admin": "npm run build -w apps/admin",
+    "build:shop": "npm run build -w apps/storefront",
+    "db:generate": "npm run generate -w @shoe/db",
+    "db:migrate": "npm run migrate -w @shoe/db",
+    "db:deploy": "npm run deploy -w @shoe/db",
+    "db:seed": "npm run seed -w @shoe/db",
+    "db:studio": "npm run studio -w @shoe/db",
+    "services:up": "docker compose up -d",
+    "services:down": "docker compose down"
+  }
+}

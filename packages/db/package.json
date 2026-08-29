@@ -1,0 +1,28 @@
+{
+  "name": "@shoe/db",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": { ".": "./src/index.ts" },
+  "scripts": {
+    "generate": "prisma generate",
+    "migrate": "prisma migrate dev && prisma generate",
+    "deploy": "prisma migrate deploy && prisma generate",
+    "reset": "prisma migrate reset",
+    "seed": "tsx prisma/seed.ts",
+    "studio": "prisma studio"
+  },
+  "dependencies": {
+    "@prisma/adapter-pg": "^7.10.0",
+    "@prisma/client": "^7.10.0",
+    "argon2": "^0.45.1",
+    "dotenv": "^17.2.3"
+  },
+  "devDependencies": {
+    "prisma": "^7.10.0",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3"
+  }
+}
