@@ -10,11 +10,12 @@ import { logger } from '../lib/logger.js'
  *
  *   stridex/brands/<uuid>.png
  *   stridex/products/<uuid>.jpg
+ *   stridex/collections/<uuid>.jpg
  */
 export const BUCKET = env.S3_BUCKET
 
 /** The only folders an upload is allowed to land in. */
-export const UPLOAD_FOLDERS = ['brands', 'products'] as const
+export const UPLOAD_FOLDERS = ['brands', 'products', 'collections'] as const
 export type UploadFolder = (typeof UPLOAD_FOLDERS)[number]
 
 function parseEndpoint(endpoint: string) {

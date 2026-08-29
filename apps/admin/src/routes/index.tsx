@@ -19,6 +19,8 @@ import InventoryPage from './inventory'
 import LowStockPage from './inventory/low-stock'
 import InventoryTransactionsPage from './inventory/transactions'
 import InventoryVariantPage from './inventory/variant-detail'
+import CollectionsPage from './collections'
+import CollectionEditorPage, { NewCollectionPage } from './collections/collection-editor'
 
 export const router = createBrowserRouter([
   {
@@ -56,6 +58,10 @@ export const router = createBrowserRouter([
           { path: 'inventory/low-stock', element: <LowStockPage /> },
           { path: 'inventory/transactions', element: <InventoryTransactionsPage /> },
           { path: 'inventory/:variantId', element: <InventoryVariantPage /> },
+          { path: 'collections', element: <CollectionsPage /> },
+          // Before ':id', or 'new' is read as a collection id.
+          { path: 'collections/new', element: <NewCollectionPage /> },
+          { path: 'collections/:id', element: <CollectionEditorPage /> },
           { path: '*', element: <NotFoundPage /> },
         ],
       },

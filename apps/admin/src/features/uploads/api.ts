@@ -1,7 +1,7 @@
 import { api } from '@/lib/api-client'
 
-/** Folders the API will accept an upload into. */
-export type UploadFolder = 'brands' | 'products'
+/** Folders the API will accept an upload into. Mirrors `UPLOAD_FOLDERS`. */
+export type UploadFolder = 'brands' | 'products' | 'collections'
 
 export type UploadedObject = { key: string; url: string; size: number }
 

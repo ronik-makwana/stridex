@@ -154,6 +154,8 @@ type ProductWithExtras = Product & {
   brand?: Pick<Brand, 'id' | 'name' | 'slug'> | null
   category?: CategoryRef | null
   media?: ProductMedia[]
+  /** Set by the list service, which loads the cover alone and drops `media`. */
+  coverUrl?: string | null
   attributes?: ProductAttributeWithRefs[]
   variantOptions?: ProductVariantOptionWithRefs[]
   variants?: VariantWithRefs[]
@@ -193,8 +195,9 @@ export function serializeAdminProduct(product: ProductWithExtras) {
       ? [...ancestors.map((ancestor) => ancestor.name), product.category.name].join(' > ')
       : null,
 
-    // Cover first because media is always loaded in `sortOrder` order.
-    coverUrl: media?.[0]?.url ?? null,
+    // The list computes its own cover and omits `media`; everywhere else the
+    // gallery is loaded in `sortOrder` order, so the first entry is the cover.
+    coverUrl: product.coverUrl ?? media?.[0]?.url ?? null,
     mediaCount: product.mediaCount ?? product._count?.media ?? media?.length ?? 0,
     variantCount: product.variantCount ?? product._count?.variants ?? product.variants?.length ?? 0,
     /** Summed available across variants. Red at zero in the list, even when active. */

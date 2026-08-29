@@ -46,7 +46,7 @@ const NAV_SECTIONS = [
       { to: '/brands', label: 'Brands', icon: Tags },
       { to: '/attributes', label: 'Attributes', icon: ListChecks },
       { to: '/variant-options', label: 'Variant options', icon: Layers },
-      { to: '/collections', label: 'Collections', icon: Boxes, disabled: true },
+      { to: '/collections', label: 'Collections', icon: Boxes },
     ],
   },
   {

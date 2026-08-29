@@ -450,6 +450,97 @@ export type RestockInput = {
   note?: string | null
 }
 
+// ─── collections ─────────────────────────────────────────────────────────────
+
+export type CollectionType = 'MANUAL' | 'DYNAMIC'
+export type MatchType = 'ALL' | 'ANY'
+
+export type RuleOperator =
+  | 'is'
+  | 'is_not'
+  | 'contains'
+  | 'greater_than'
+  | 'less_than'
+  | 'is_empty'
+
+/** What control the builder draws, and what the rule's value means. */
+export type RuleFieldKind =
+  | 'category'
+  | 'brand'
+  | 'money'
+  | 'text'
+  | 'number'
+  | 'date'
+  | 'attribute-select'
+  | 'attribute-text'
+  | 'attribute-number'
+  | 'attribute-boolean'
+
+/**
+ * Served by the API rather than hard-coded here. Attributes are data, so the
+ * field list grows when the catalogue does — a client copy would start posting
+ * rules the engine rejects the first time somebody adds one.
+ */
+export type RuleFieldDefinition = {
+  field: string
+  label: string
+  kind: RuleFieldKind
+  operators: RuleOperator[]
+  /** Attribute select fields only — the values the picker offers. */
+  values?: { id: string; label: string }[]
+  unit?: string | null
+}
+
+export type CollectionRule = {
+  id: string
+  field: string
+  operator: RuleOperator
+  /** Meaning depends entirely on the field: a uuid, a number, an ISO date. */
+  value: string | number | boolean | null
+  groupId: number
+}
+
+/** What the builder holds before anything is saved. */
+export type RuleDraft = {
+  field: string
+  operator: RuleOperator
+  value: string | number | boolean | null
+}
+
+export type Collection = {
+  id: string
+  name: string
+  slug: string
+  description: string | null
+  imageUrl: string | null
+  type: CollectionType
+  matchType: MatchType
+  status: EntityStatus
+  /**
+   * Manual: the pinned list's length. Dynamic: how many products the rules
+   * match right now — a number that moves without anyone editing it.
+   */
+  productCount: number
+  /** `null` on the list endpoint — rules are only loaded by the detail one. */
+  rules: CollectionRule[] | null
+  products: Product[] | null
+  /** A rule pointing at something deleted. Shown, never swallowed. */
+  ruleError: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export type CollectionListQuery = {
+  page?: number
+  limit?: number
+  sort?: string
+  q?: string
+  type?: CollectionType
+  status?: EntityStatus
+}
+
+export type RulePreview = { count: number; sample: Product[] }
+
 export type AuthSession = {
   user: AdminUser
   accessToken: string
