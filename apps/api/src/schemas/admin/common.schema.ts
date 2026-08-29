@@ -12,6 +12,12 @@ export const uuidParamSchema = z.object({
   id: z.uuid('Not a valid id'),
 })
 
+/** `/:id/values/:valueId` — the nested rows on attributes and variant options. */
+export const valueParamSchema = z.object({
+  id: z.uuid('Not a valid id'),
+  valueId: z.uuid('Not a valid id'),
+})
+
 /**
  * `sort=created_at:desc`. The caller supplies the columns it is willing to sort
  * by, so a query string can never reach a field that is not indexed — or one
@@ -61,8 +67,28 @@ export const slugSchema = z
   .max(120, 'Use at most 120 characters')
   .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, 'Use lowercase letters, numbers and single hyphens')
 
+/**
+ * `?isFilterable=true`. Query strings carry 'true'/'false', never booleans, and
+ * an absent filter has to stay `undefined` rather than collapsing to `false`.
+ */
+export const booleanQuerySchema = z
+  .enum(['true', 'false'])
+  .transform((value) => value === 'true')
+  .optional()
+
+/**
+ * Drag-to-reorder posts the ids in their new order and the server assigns
+ * positions from the array index. Sending positions instead invites an
+ * off-by-one from a client that computed them differently.
+ */
+export const reorderSchema = z.object({
+  ids: z.array(z.uuid('Not a valid id')).min(1, 'Nothing to reorder'),
+})
+
 export type PaginationInput = z.infer<typeof paginationSchema>
 export type UuidParam = z.infer<typeof uuidParamSchema>
+export type ValueParam = z.infer<typeof valueParamSchema>
+export type ReorderInput = z.infer<typeof reorderSchema>
 
 /** The `meta` block every list response carries. */
 export function listMeta(total: number, page: number, limit: number) {

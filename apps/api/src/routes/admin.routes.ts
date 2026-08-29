@@ -2,7 +2,9 @@ import { Router } from 'express'
 import { authenticate } from '../middleware/auth.js'
 import { requireAdminSession } from '../middleware/requireRole.js'
 import { adminAuthRouter } from '../modules/auth/admin.auth.routes.js'
+import { adminAttributesRouter } from '../modules/attributes/admin.attributes.routes.js'
 import { adminBrandsRouter } from '../modules/brands/admin.brands.routes.js'
+import { adminVariantOptionsRouter } from '../modules/variant-options/admin.variant-options.routes.js'
 import { adminUploadsRouter } from '../modules/uploads/admin.uploads.routes.js'
 
 export const adminRouter: Router = Router()
@@ -16,6 +18,7 @@ adminRouter.use('/auth', adminAuthRouter)
 adminRouter.use(authenticate, requireAdminSession)
 
 adminRouter.use('/brands', adminBrandsRouter)
+adminRouter.use('/attributes', adminAttributesRouter)
+adminRouter.use('/variant-options', adminVariantOptionsRouter)
 adminRouter.use('/uploads', adminUploadsRouter)
-// Phases 2+: categories, attributes, variant options, products, inventory,
-// collections, orders.
+// Phases 3+: categories, products, inventory, collections, orders.

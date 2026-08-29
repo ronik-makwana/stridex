@@ -8,6 +8,10 @@ import ForbiddenPage from './forbidden'
 import NotFoundPage from './not-found'
 import DashboardPage from './dashboard'
 import BrandsPage from './brands'
+import AttributesPage from './attributes'
+import AttributeDetailPage from './attributes/attribute-detail'
+import VariantOptionsPage from './variant-options'
+import VariantOptionDetailPage from './variant-options/variant-option-detail'
 
 export const router = createBrowserRouter([
   {
@@ -29,6 +33,10 @@ export const router = createBrowserRouter([
         children: [
           { index: true, element: <DashboardPage /> },
           { path: 'brands', element: <BrandsPage /> },
+          { path: 'attributes', element: <AttributesPage /> },
+          { path: 'attributes/:id', element: <AttributeDetailPage /> },
+          { path: 'variant-options', element: <VariantOptionsPage /> },
+          { path: 'variant-options/:id', element: <VariantOptionDetailPage /> },
           { path: '*', element: <NotFoundPage /> },
         ],
       },
