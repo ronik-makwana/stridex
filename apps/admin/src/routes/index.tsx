@@ -13,6 +13,8 @@ import AttributesPage from './attributes'
 import AttributeDetailPage from './attributes/attribute-detail'
 import VariantOptionsPage from './variant-options'
 import VariantOptionDetailPage from './variant-options/variant-option-detail'
+import ProductsPage from './products'
+import ProductEditorPage, { NewProductPage } from './products/product-editor'
 
 export const router = createBrowserRouter([
   {
@@ -39,6 +41,11 @@ export const router = createBrowserRouter([
           { path: 'attributes/:id', element: <AttributeDetailPage /> },
           { path: 'variant-options', element: <VariantOptionsPage /> },
           { path: 'variant-options/:id', element: <VariantOptionDetailPage /> },
+          { path: 'products', element: <ProductsPage /> },
+          // Before ':id', or 'new' is read as a product id and the editor
+          // fetches a uuid that does not exist.
+          { path: 'products/new', element: <NewProductPage /> },
+          { path: 'products/:id', element: <ProductEditorPage /> },
           { path: '*', element: <NotFoundPage /> },
         ],
       },

@@ -125,8 +125,27 @@ export async function findMany(query: AttributeListQuery) {
 
   const counts = await productCountsByAttribute(data.map((row) => row.id))
 
+  // Opt-in, because the list screen renders counts and never values, and this
+  // is one extra query plus a payload several times the size.
+  const values = query.withValues
+    ? await prisma.attributeValue.findMany({
+        where: { attributeId: { in: data.map((row) => row.id) } },
+        orderBy: [{ position: 'asc' }, { value: 'asc' }],
+      })
+    : null
+
   return {
-    data: data.map((row) => ({ ...row, productCount: counts.get(row.id) ?? 0 })),
+    data: data.map((row) => ({
+      ...row,
+      productCount: counts.get(row.id) ?? 0,
+      ...(values
+        ? {
+            values: values
+              .filter((value) => value.attributeId === row.id)
+              .map((value) => ({ ...value, productCount: 0 })),
+          }
+        : {}),
+    })),
     total,
   }
 }

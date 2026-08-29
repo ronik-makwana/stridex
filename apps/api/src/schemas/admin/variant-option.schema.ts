@@ -1,5 +1,11 @@
 import { z } from 'zod'
-import { paginationSchema, searchSchema, slugSchema, sortSchema } from './common.schema.js'
+import {
+  booleanQuerySchema,
+  paginationSchema,
+  searchSchema,
+  slugSchema,
+  sortSchema,
+} from './common.schema.js'
 
 const nameSchema = z
   .string()
@@ -29,6 +35,12 @@ const swatchHexSchema = z
 
 export const variantOptionListQuerySchema = paginationSchema.extend({
   q: searchSchema,
+  /**
+   * Nests each option's values in the list response. The product editor's
+   * option picker ticks boxes against the full value list, and one request that
+   * carries them beats one detail call per option on the form.
+   */
+  withValues: booleanQuerySchema,
   sort: sortSchema(['name', 'position', 'created_at', 'updated_at'], 'position:asc'),
 })
 

@@ -1,6 +1,7 @@
 import * as React from 'react'
 import { Search, X } from 'lucide-react'
 import { useDebouncedValue } from '@/hooks/use-debounced-value'
+import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
@@ -32,7 +33,18 @@ export function FilterSelect({
       value={value ?? ALL}
       onValueChange={(next) => onChange(next === ALL ? undefined : next)}
     >
-      <SelectTrigger size="sm" className={className} aria-label={label}>
+      {/*
+        `SelectTrigger` is full width by default, which is right inside a form
+        column and wrong on a filter row — without this every filter takes its
+        own line. Sized to its content here, with a floor so a two-character
+        value does not shrink the control to nothing. A caller passing its own
+        width still wins: `cn` merges last-one-in.
+      */}
+      <SelectTrigger
+        size="sm"
+        className={cn('w-auto min-w-32 max-w-56', className)}
+        aria-label={label}
+      >
         <SelectValue placeholder={label} />
       </SelectTrigger>
       <SelectContent>

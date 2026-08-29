@@ -1,5 +1,5 @@
 import * as React from 'react'
-import { Link, useNavigate, useParams } from 'react-router'
+import { useNavigate, useParams } from 'react-router'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { AlertCircle, ArrowLeft, SearchX, Trash2 } from 'lucide-react'
@@ -152,21 +152,10 @@ function VariantOptionDetail({ option }: { option: VariantOption }) {
 
   return (
     <div className="space-y-4">
-      <Link
-        to="/variant-options"
-        className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1.5 text-sm transition-colors"
-      >
-        <ArrowLeft className="size-4" />
-        Variant options
-      </Link>
-
       <PageHeader
+        backTo="/variant-options"
+        backLabel="Back to variant options"
         title={option.name}
-        description={`Used by ${
-          option.productCount === 0
-            ? 'no products'
-            : `${option.productCount} ${option.productCount === 1 ? 'product' : 'products'}`
-        }.`}
         actions={
           <>
             <Button

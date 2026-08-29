@@ -50,6 +50,12 @@ export const attributeListQuerySchema = paginationSchema.extend({
   q: searchSchema,
   type: attributeTypeSchema.optional(),
   isFilterable: booleanQuerySchema,
+  /**
+   * Nests each attribute's values in the list response. The product editor
+   * needs every SELECT's options to render its controls, and one request that
+   * carries them beats one detail call per attribute on the form.
+   */
+  withValues: booleanQuerySchema,
   sort: sortSchema(['name', 'type', 'position', 'created_at', 'updated_at'], 'name:asc'),
 })
 

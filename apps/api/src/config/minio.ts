@@ -133,3 +133,112 @@ export async function removeObjectByUrl(url: string | null | undefined): Promise
     logger.warn({ err: error, key }, 'could not remove orphaned object')
   }
 }
+
+// ─── direct browser uploads ──────────────────────────────────────────────────
+//
+// Product media is where `uploadObject` stops being the right tool. A gallery
+// is four to eight files of several megabytes each, and routing those through
+// Node means the API holds every byte in memory, ties up an event loop that has
+// requests to serve, and doubles the bandwidth bill for no gain. The browser
+// PUTs straight to storage instead; the API only signs the URL and records the
+// row afterwards.
+
+/**
+ * Long enough for a slow phone on hotel wifi to finish a 20MB video, short
+ * enough that a signature copied out of devtools is worthless by the time
+ * anyone tries it.
+ */
+const PRESIGN_TTL_SECONDS = 15 * 60
+
+/** Fallbacks for a filename with no usable extension — a paste, or a camera blob. */
+const EXTENSION_BY_TYPE: Record<string, string> = {
+  'image/png': '.png',
+  'image/jpeg': '.jpg',
+  'image/webp': '.webp',
+  'image/gif': '.gif',
+  'image/avif': '.avif',
+  'video/mp4': '.mp4',
+  'video/webm': '.webm',
+}
+
+export type PresignedUpload = { uploadUrl: string; key: string; url: string }
+
+/**
+ * Hands back a URL the browser can PUT one object to, plus the key and the
+ * public URL the object will live at. The key is a fresh UUID for the same
+ * reason `uploadObject` uses one: operator filenames collide, carry spaces and
+ * unicode, and leak whatever was on someone's desktop.
+ *
+ * Nothing is recorded here. An abandoned upload leaves an object with no row,
+ * which costs storage and nothing else; a row with no object would be a broken
+ * image in the gallery, which is why the record step verifies first.
+ */
+export async function presignUpload(
+  folder: UploadFolder,
+  filename: string,
+  contentType: string,
+): Promise<PresignedUpload> {
+  await ensureBucket()
+
+  const extension =
+    extname(filename).toLowerCase().slice(0, 10) || EXTENSION_BY_TYPE[contentType] || '.bin'
+  const key = `${folder}/${randomUUID()}${extension}`
+
+  const uploadUrl = await minio.presignedPutObject(BUCKET, key, PRESIGN_TTL_SECONDS)
+  return { uploadUrl, key, url: publicUrl(key) }
+}
+
+export type ObjectStat = { size: number; contentType: string | undefined }
+
+/**
+ * What the browser actually stored, or null if it never got there. The media
+ * record step calls this before writing a row, so a PUT that failed, was
+ * cancelled, or was never made cannot become a broken <img> nobody can explain.
+ */
+export async function statObject(key: string): Promise<ObjectStat | null> {
+  try {
+    const stat = await minio.statObject(BUCKET, key)
+    return { size: stat.size, contentType: stat.metaData?.['content-type'] }
+  } catch {
+    return null
+  }
+}
+
+/** Best effort, like `removeObjectByUrl` — see the note there. */
+export async function removeObjectByKey(key: string | null | undefined): Promise<void> {
+  if (!key) return
+  try {
+    await minio.removeObject(BUCKET, key)
+  } catch (error) {
+    logger.warn({ err: error, key }, 'could not remove orphaned object')
+  }
+}
+
+/**
+ * Server-side copy of one stored object into a fresh key. Used when a product
+ * is duplicated: pointing both products at the same key would mean deleting an
+ * image from the copy silently breaks the original, and a copy that shares
+ * nothing is worth the storage.
+ *
+ * The bytes never travel through Node — `copyObject` is a single call the
+ * storage service performs internally. Returns null for anything this bucket
+ * does not own, so the caller falls back to reusing the URL as-is.
+ */
+export async function copyObjectByUrl(
+  url: string | null | undefined,
+  folder: UploadFolder,
+): Promise<string | null> {
+  const sourceKey = keyFromUrl(url)
+  if (!sourceKey) return null
+
+  const extension = extname(sourceKey).toLowerCase().slice(0, 10) || '.bin'
+  const key = `${folder}/${randomUUID()}${extension}`
+
+  try {
+    await minio.copyObject(BUCKET, key, `/${BUCKET}/${sourceKey}`)
+    return publicUrl(key)
+  } catch (error) {
+    logger.warn({ err: error, sourceKey }, 'could not copy stored object')
+    return null
+  }
+}

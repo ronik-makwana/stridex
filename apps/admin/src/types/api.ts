@@ -141,6 +141,8 @@ export type AttributeListQuery = {
   type?: AttributeType
   /** The URL carries 'true'/'false'; the API accepts either form. */
   isFilterable?: boolean | 'true' | 'false'
+  /** Nests each attribute's values. The product editor needs them; the list does not. */
+  withValues?: boolean | 'true' | 'false'
 }
 
 // ─── variant options ─────────────────────────────────────────────────────────
@@ -176,7 +178,176 @@ export type VariantOptionListQuery = {
   limit?: number
   sort?: string
   q?: string
+  /** Nests each option's values. The product editor needs them; the list does not. */
+  withValues?: boolean | 'true' | 'false'
 }
+
+// ─── products ────────────────────────────────────────────────────────────────
+
+export type MediaType = 'IMAGE' | 'VIDEO'
+
+export type ProductMedia = {
+  id: string
+  productId: string
+  url: string
+  altText: string | null
+  type: MediaType
+  sortOrder: number
+  /** Position 0. Derived server side, so there is one source of truth. */
+  isCover: boolean
+  createdAt: string
+}
+
+/**
+ * One attribute row on a product, flattened. The editor picks a control from
+ * `type` and labels the input with `unit`, so the definition rides along rather
+ * than being looked up per row.
+ */
+export type ProductAttributeRow = {
+  id: string
+  attributeId: string
+  name: string
+  slug: string
+  type: AttributeType
+  unit: string | null
+  isFilterable: boolean
+  attributeValueId: string | null
+  /** The chosen option's label, for SELECT and MULTI_SELECT. */
+  valueLabel: string | null
+  valueText: string | null
+  /** Decimal, as a fixed-point string — never a float. */
+  valueNumber: string | null
+  valueBoolean: boolean | null
+  position: number
+}
+
+/** An option this product builds variants from, with every value it offers. */
+export type ProductVariantOptionRow = {
+  id: string
+  variantOptionId: string
+  name: string
+  slug: string
+  /** 0-based. Drives the Option 1 / Option 2 labels and the SKU token order. */
+  position: number
+  values: {
+    id: string
+    value: string
+    slug: string
+    swatchHex: string | null
+    position: number
+  }[]
+}
+
+export type VariantStock = {
+  quantity: number
+  reserved: number
+  available: number
+  lowStockThreshold: number
+}
+
+export type ProductVariant = {
+  id: string
+  productId: string
+  sku: string
+  barcode: string | null
+  /** Money is a fixed-point string end to end. Parse only to display. */
+  price: string
+  compareAtPrice: string | null
+  mediaId: string | null
+  position: number
+  status: EntityStatus
+  stock: VariantStock
+  options: {
+    optionValueId: string
+    variantOptionId: string
+    optionName: string | null
+    value: string
+    swatchHex: string | null
+  }[]
+  createdAt: string
+  updatedAt: string
+}
+
+export type ProductRef = { id: string; name: string; slug: string }
+
+export type Product = {
+  id: string
+  title: string
+  slug: string
+  description: string | null
+  status: EntityStatus
+  publishedAt: string | null
+
+  brandId: string | null
+  brand: ProductRef | null
+  categoryId: string | null
+  category: ProductRef | null
+  /** 'Shoes > Men > Running'. */
+  categoryPath: string | null
+
+  coverUrl: string | null
+  mediaCount: number
+  variantCount: number
+  /** Summed available across variants. Red at zero, even when active. */
+  totalStock: number
+
+  /** `null` on the list endpoint — only the detail one loads these four. */
+  media: ProductMedia[] | null
+  attributes: ProductAttributeRow[] | null
+  variantOptions: ProductVariantOptionRow[] | null
+  variants: ProductVariant[] | null
+
+  createdAt: string
+  updatedAt: string
+}
+
+export type StockFilter = 'in' | 'low' | 'out'
+
+export type ProductListQuery = {
+  page?: number
+  limit?: number
+  sort?: string
+  q?: string
+  status?: EntityStatus
+  brandId?: string
+  categoryId?: string
+  stock?: StockFilter
+  /** The URL carries 'true'/'false'; the API accepts either form. */
+  missingMedia?: boolean | 'true' | 'false'
+}
+
+export type PublishCheck = {
+  key: string
+  label: string
+  passed: boolean
+  detail?: string
+}
+
+export type PublishChecklist = { checks: PublishCheck[]; ready: boolean }
+
+/** What a dry run reports before anything is written. */
+export type GenerateResult = {
+  added: number
+  kept: number
+  removed: number
+  preview: {
+    key: string
+    sku: string
+    options: { optionName: string; value: string }[]
+    isNew: boolean
+  }[]
+  /** Combinations outside the selection that cannot be removed — they have sold. */
+  blocked: { sku: string; reason: string }[]
+  applied: boolean
+}
+
+export type BulkResult = {
+  updated: number
+  skipped: { id: string; title: string; reason: string }[]
+}
+
+/** What a presign hands back. The browser PUTs to `uploadUrl`, then records `key`. */
+export type PresignedUpload = { uploadUrl: string; key: string; url: string }
 
 export type AuthSession = {
   user: AdminUser

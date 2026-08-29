@@ -94,7 +94,23 @@ export async function findMany(query: VariantOptionListQuery) {
     prisma.variantOption.count({ where }),
   ])
 
-  return { data, total }
+  // Opt-in, for the same reason as attributes: the list screen renders counts,
+  // and only the product editor needs the values themselves.
+  if (!query.withValues) return { data, total }
+
+  const values = await prisma.variantOptionValue.findMany({
+    where: { variantOptionId: { in: data.map((row) => row.id) } },
+    include: valueWithCount,
+    orderBy: [{ position: 'asc' }, { value: 'asc' }],
+  })
+
+  return {
+    data: data.map((row) => ({
+      ...row,
+      values: values.filter((value) => value.variantOptionId === row.id),
+    })),
+    total,
+  }
 }
 
 /** The list row, without values. Used wherever a write needs to answer with one. */
