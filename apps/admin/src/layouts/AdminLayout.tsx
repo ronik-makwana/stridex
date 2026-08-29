@@ -42,7 +42,7 @@ const NAV_SECTIONS = [
     label: 'Catalog',
     items: [
       { to: '/products', label: 'Products', icon: Package, disabled: true },
-      { to: '/categories', label: 'Categories', icon: FolderTree, disabled: true },
+      { to: '/categories', label: 'Categories', icon: FolderTree },
       { to: '/brands', label: 'Brands', icon: Tags },
       { to: '/attributes', label: 'Attributes', icon: ListChecks },
       { to: '/variant-options', label: 'Variant options', icon: Layers },

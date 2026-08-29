@@ -41,6 +41,60 @@ export type BrandListQuery = {
   status?: EntityStatus
 }
 
+// ─── categories ──────────────────────────────────────────────────────────────
+
+/** How deep the tree is allowed to go. Mirrors `MAX_CATEGORY_DEPTH` on the API. */
+export const MAX_CATEGORY_DEPTH = 4
+
+export type CategoryAncestor = {
+  id: string
+  name: string
+  slug: string
+}
+
+export type Category = {
+  id: string
+  name: string
+  slug: string
+  description: string | null
+  parentId: string | null
+  /** 0-based, derived server side from the parent. Never sent on a write. */
+  level: number
+  /** Order among its siblings only. Changed by dragging, never by the form. */
+  position: number
+  status: EntityStatus
+  /** Products sitting directly in this category — what a delete is blocked on. */
+  productCount: number
+  /** Including every descendant. What the tree shows beside a branch. */
+  totalProductCount: number
+  childCount: number
+  /** Root first, self excluded. */
+  ancestors: CategoryAncestor[]
+  /** 'Shoes > Men > Running'. */
+  path: string
+  /** Only the tree endpoint nests them; `null` everywhere else. */
+  children: Category[] | null
+  createdAt: string
+  updatedAt: string
+}
+
+export type CategoryListQuery = {
+  page?: number
+  limit?: number
+  sort?: string
+  q?: string
+  status?: EntityStatus
+  /** 'root' for the top level, or a category id for its direct children. */
+  parentId?: string
+}
+
+/** One dropped node: where it landed and under whom. `null` is the top level. */
+export type CategoryMove = {
+  id: string
+  parentId: string | null
+  position: number
+}
+
 // ─── attributes ──────────────────────────────────────────────────────────────
 
 export type AttributeType = 'TEXT' | 'NUMBER' | 'BOOLEAN' | 'SELECT' | 'MULTI_SELECT'
