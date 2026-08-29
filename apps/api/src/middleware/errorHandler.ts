@@ -1,5 +1,6 @@
 import type { ErrorRequestHandler, RequestHandler } from 'express'
 import { Prisma } from '@shoe/db'
+import { MulterError } from 'multer'
 import { ZodError } from 'zod'
 import { AppError } from '../lib/errors.js'
 import { logger } from '../lib/logger.js'
@@ -30,6 +31,20 @@ export const errorHandler: ErrorRequestHandler = (err, _req, res, _next) => {
         ...(err.fields ? { fields: err.fields } : {}),
         ...(err.reason ? { reason: err.reason } : {}),
       },
+    })
+    return
+  }
+
+  // Multer rejects before any handler runs, so its errors arrive raw.
+  if (err instanceof MulterError) {
+    const message =
+      err.code === 'LIMIT_FILE_SIZE'
+        ? 'That file is too large'
+        : err.code === 'LIMIT_UNEXPECTED_FILE'
+          ? `Unexpected file field "${err.field}"`
+          : 'That upload could not be read'
+    res.status(err.code === 'LIMIT_FILE_SIZE' ? 413 : 400).json({
+      error: { code: 'UPLOAD_REJECTED', message, fields: { file: message } },
     })
     return
   }

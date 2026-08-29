@@ -98,3 +98,33 @@
     font-feature-settings: "rlig" 1, "calt" 1;
   }
 }
+
+/*
+ * Radix mounts and unmounts with `data-state`, so overlays and panels need real
+ * keyframes to animate out. `tw-animate-css` is not installed; these four are
+ * everything the dialog, sheet and menu primitives actually use.
+ */
+@keyframes admin-fade-in { from { opacity: 0 } to { opacity: 1 } }
+@keyframes admin-fade-out { from { opacity: 1 } to { opacity: 0 } }
+@keyframes admin-slide-in-right { from { transform: translateX(100%) } to { transform: translateX(0) } }
+@keyframes admin-slide-out-right { from { transform: translateX(0) } to { transform: translateX(100%) } }
+@keyframes admin-zoom-in { from { opacity: 0; transform: scale(0.96) } to { opacity: 1; transform: scale(1) } }
+@keyframes admin-zoom-out { from { opacity: 1; transform: scale(1) } to { opacity: 0; transform: scale(0.96) } }
+
+@utility animate-overlay-in { animation: admin-fade-in 150ms ease-out }
+@utility animate-overlay-out { animation: admin-fade-out 150ms ease-in }
+@utility animate-sheet-in { animation: admin-slide-in-right 220ms cubic-bezier(0.32, 0.72, 0, 1) }
+@utility animate-sheet-out { animation: admin-slide-out-right 180ms cubic-bezier(0.32, 0.72, 0, 1) }
+@utility animate-dialog-in { animation: admin-zoom-in 150ms ease-out }
+@utility animate-dialog-out { animation: admin-zoom-out 120ms ease-in }
+
+/* Respect the OS setting: an animated overlay is exactly what this is for. */
+@media (prefers-reduced-motion: reduce) {
+  [data-slot='sheet-content'],
+  [data-slot='dialog-content'],
+  [data-slot='alert-dialog-content'],
+  [data-slot='sheet-overlay'],
+  [data-slot='dialog-overlay'] {
+    animation: none !important;
+  }
+}

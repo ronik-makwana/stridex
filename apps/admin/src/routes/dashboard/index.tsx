@@ -13,13 +13,12 @@ export default function DashboardPage() {
         <CardHeader>
           <CardTitle className="text-base">Foundation is in place</CardTitle>
           <CardDescription>
-            Auth, the refresh interceptor, guards and the layout are working. Catalog screens land
-            in the next phases.
+            Auth, the refresh interceptor, guards, the layout and the shared list components are
+            working. Brands is live; the rest of the catalog lands in the next phases.
           </CardDescription>
         </CardHeader>
         <CardContent className="text-muted-foreground text-sm">
           <ul className="list-inside list-disc space-y-1">
-            <li>Phase 1 — brands, and the shared DataTable and EntityDrawer</li>
             <li>Phase 2 — attributes and variant options</li>
             <li>Phase 3 — the category tree</li>
             <li>Phase 4 and 5 — products, media and variants</li>

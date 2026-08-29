@@ -3,12 +3,20 @@ import { createApp } from './app.js'
 import { env } from './config/env.js'
 import { logger } from './lib/logger.js'
 import { prisma } from './lib/prisma.js'
+import { ensureBucket } from './config/minio.js'
 
 const app = createApp()
 
 const server = app.listen(env.PORT, () => {
   logger.info(`api listening on http://localhost:${env.PORT} [${env.NODE_ENV}]`)
 })
+
+// Create the bucket up front so the first upload is not the thing that
+// discovers storage is missing. Not fatal: the API serves every other route
+// fine without it, and `uploadObject` retries the check on each attempt.
+void ensureBucket()
+  .then(() => logger.info({ bucket: env.S3_BUCKET }, 'object storage ready'))
+  .catch((error) => logger.error({ err: error }, 'object storage unavailable — uploads will fail'))
 
 async function shutdown(signal: string) {
   logger.info({ signal }, 'shutting down')

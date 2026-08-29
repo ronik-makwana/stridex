@@ -43,7 +43,7 @@ const NAV_SECTIONS = [
     items: [
       { to: '/products', label: 'Products', icon: Package, disabled: true },
       { to: '/categories', label: 'Categories', icon: FolderTree, disabled: true },
-      { to: '/brands', label: 'Brands', icon: Tags, disabled: true },
+      { to: '/brands', label: 'Brands', icon: Tags },
       { to: '/attributes', label: 'Attributes', icon: ListChecks, disabled: true },
       { to: '/variant-options', label: 'Variant options', icon: Layers, disabled: true },
       { to: '/collections', label: 'Collections', icon: Boxes, disabled: true },

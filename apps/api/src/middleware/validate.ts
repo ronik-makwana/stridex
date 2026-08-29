@@ -39,3 +39,12 @@ export function validate(schemas: Schemas): RequestHandler {
 export function validatedQuery<T>(req: Request): T {
   return (req as Request & { validatedQuery: T }).validatedQuery
 }
+
+/**
+ * Typed accessor for what `validate({ params })` parsed. Express 5 types every
+ * route param as `string | string[]`; the Zod schema has already narrowed it,
+ * so this hands handlers the narrowed shape instead of a cast at each use.
+ */
+export function validatedParams<T>(req: Request): T {
+  return req.params as T
+}

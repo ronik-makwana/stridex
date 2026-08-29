@@ -7,6 +7,7 @@ import ResetPasswordPage from './reset-password'
 import ForbiddenPage from './forbidden'
 import NotFoundPage from './not-found'
 import DashboardPage from './dashboard'
+import BrandsPage from './brands'
 
 export const router = createBrowserRouter([
   {
@@ -27,6 +28,7 @@ export const router = createBrowserRouter([
         element: <AdminLayout />,
         children: [
           { index: true, element: <DashboardPage /> },
+          { path: 'brands', element: <BrandsPage /> },
           { path: '*', element: <NotFoundPage /> },
         ],
       },

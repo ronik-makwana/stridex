@@ -18,10 +18,17 @@ const envSchema = z.object({
     .default('http://localhost:5173,http://localhost:5174')
     .transform((value) => value.split(',').map((origin) => origin.trim()).filter(Boolean)),
 
-  S3_ENDPOINT: z.string().optional(),
-  S3_BUCKET: z.string().optional(),
-  S3_ACCESS_KEY: z.string().optional(),
-  S3_SECRET_KEY: z.string().optional(),
+  // Object storage (MinIO in development, any S3-compatible host in production).
+  S3_ENDPOINT: z.url().default('http://localhost:9000'),
+  S3_BUCKET: z.string().min(1).default('stridex'),
+  S3_ACCESS_KEY: z.string().min(1).default('minio'),
+  S3_SECRET_KEY: z.string().min(1).default('minio123'),
+  S3_REGION: z.string().default('us-east-1'),
+  // Where browsers reach the objects. Split from S3_ENDPOINT because in
+  // production the API talks to storage over a private address while the
+  // <img> tags point at a CDN.
+  S3_PUBLIC_URL: z.string().optional(),
+
   REDIS_URL: z.string().optional(),
 
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info'),
@@ -36,6 +43,9 @@ if (!parsed.success) {
   throw new Error(`Invalid environment:\n${issues}`)
 }
 
-export const env = parsed.data
+export const env = {
+  ...parsed.data,
+  S3_PUBLIC_URL: parsed.data.S3_PUBLIC_URL || parsed.data.S3_ENDPOINT,
+}
 export const isProduction = env.NODE_ENV === 'production'
 export const isDevelopment = env.NODE_ENV === 'development'

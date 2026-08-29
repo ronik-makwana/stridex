@@ -19,6 +19,28 @@ export type AdminUser = {
   updatedAt: string
 }
 
+/** Shared across brands, categories, products, variants and collections. */
+export type EntityStatus = 'DRAFT' | 'ACTIVE' | 'ARCHIVED'
+
+export type Brand = {
+  id: string
+  name: string
+  slug: string
+  logoUrl: string | null
+  status: EntityStatus
+  productCount: number
+  createdAt: string
+  updatedAt: string
+}
+
+export type BrandListQuery = {
+  page?: number
+  limit?: number
+  sort?: string
+  q?: string
+  status?: EntityStatus
+}
+
 export type AuthSession = {
   user: AdminUser
   accessToken: string
