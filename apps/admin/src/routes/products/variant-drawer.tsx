@@ -1,4 +1,5 @@
 import * as React from 'react'
+import { SlidersHorizontal } from 'lucide-react'
 import { toast } from 'sonner'
 import { ApiError } from '@/lib/api-client'
 import { cn } from '@/lib/utils'
@@ -32,7 +33,6 @@ type Draft = {
   compareAtPrice: string
   status: ProductVariant['status']
   mediaId: string | null
-  quantity: string
   lowStockThreshold: string
 }
 
@@ -43,7 +43,6 @@ const toDraft = (variant: ProductVariant): Draft => ({
   compareAtPrice: variant.compareAtPrice ?? '',
   status: variant.status,
   mediaId: variant.mediaId,
-  quantity: String(variant.stock.quantity),
   lowStockThreshold: String(variant.stock.lowStockThreshold),
 })
 
@@ -59,10 +58,13 @@ export function VariantDrawer({
   product,
   variant,
   onOpenChange,
+  onAdjust,
 }: {
   product: Product
   variant: ProductVariant | null
   onOpenChange: (open: boolean) => void
+  /** Hands the SKU to the adjust dialog, which owns every stock write. */
+  onAdjust: (variant: ProductVariant) => void
 }) {
   const update = useUpdateVariant(product.id)
   const [draft, setDraft] = React.useState<Draft | null>(null)
@@ -89,7 +91,6 @@ export function VariantDrawer({
           compareAtPrice: draft.compareAtPrice.trim() || null,
           status: draft.status,
           mediaId: draft.mediaId,
-          quantity: Number(draft.quantity) || 0,
           lowStockThreshold: Number(draft.lowStockThreshold) || 0,
         },
       })
@@ -163,16 +164,31 @@ export function VariantDrawer({
                 />
               </div>
 
+              {/*
+                Read-only on purpose. Stock moves through adjust or restock so
+                that every change lands in the ledger with a reason and an
+                author — a field in a drawer cannot ask why, and a quantity that
+                changed for no recorded reason is what makes a ledger useless.
+              */}
               <div className="space-y-2">
-                <Label htmlFor="variant-quantity">On hand</Label>
-                <Input
-                  id="variant-quantity"
-                  value={draft.quantity}
-                  onChange={(event) => write('quantity', event.target.value)}
-                  inputMode="numeric"
-                />
+                <Label>On hand</Label>
+                <div className="flex items-center gap-2">
+                  <p className="text-lg font-semibold tabular-nums">
+                    {variant?.stock.quantity ?? 0}
+                  </p>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => variant && onAdjust(variant)}
+                  >
+                    <SlidersHorizontal className="size-4" />
+                    Adjust
+                  </Button>
+                </div>
                 <p className="text-muted-foreground text-xs">
-                  {variant?.stock.reserved ?? 0} reserved by pending orders.
+                  {variant?.stock.reserved ?? 0} reserved · {variant?.stock.available ?? 0}{' '}
+                  available
                 </p>
               </div>
 

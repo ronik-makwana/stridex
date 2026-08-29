@@ -52,7 +52,7 @@ const NAV_SECTIONS = [
   {
     label: 'Operations',
     items: [
-      { to: '/inventory', label: 'Inventory', icon: Warehouse, disabled: true },
+      { to: '/inventory', label: 'Inventory', icon: Warehouse },
       { to: '/orders', label: 'Orders', icon: ShoppingCart, disabled: true },
       { to: '/payments', label: 'Payments', icon: CreditCard, disabled: true },
       { to: '/customers', label: 'Customers', icon: Users, disabled: true },
@@ -88,16 +88,16 @@ export function AdminLayout() {
   }, [collapsed])
 
   return (
-    <div className="bg-muted/30 flex min-h-svh">
+    <div className="bg-muted/30 flex h-svh overflow-hidden">
       <aside
         className={cn(
-          'bg-sidebar text-sidebar-foreground flex shrink-0 flex-col border-r transition-[width] duration-200',
+          'bg-sidebar text-sidebar-foreground flex h-full shrink-0 flex-col border-r transition-[width] duration-200',
           collapsed ? 'w-16' : 'w-60',
         )}
       >
         <div
           className={cn(
-            'flex h-14 items-center border-b',
+            'flex h-14 shrink-0 items-center border-b',
             collapsed ? 'justify-center px-2' : 'justify-between px-4',
           )}
         >
@@ -113,7 +113,7 @@ export function AdminLayout() {
           </Button>
         </div>
 
-        <nav className={cn('flex-1 overflow-y-auto py-3', collapsed ? 'px-2' : 'px-3')}>
+        <nav className={cn('min-h-0 flex-1 overflow-y-auto py-3', collapsed ? 'px-2' : 'px-3')}>
           {NAV_SECTIONS.map((section, index) => (
             <div key={section.label ?? index} className={cn(index > 0 && 'mt-5')}>
               {section.label &&
@@ -164,7 +164,7 @@ export function AdminLayout() {
           ))}
         </nav>
 
-        <div className={cn('border-t py-3', collapsed ? 'px-2' : 'px-3')}>
+        <div className={cn('shrink-0 border-t py-3', collapsed ? 'px-2' : 'px-3')}>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button
@@ -209,7 +209,7 @@ export function AdminLayout() {
         </div>
       </aside>
 
-      <main className="min-w-0 flex-1 p-6">
+      <main className="min-w-0 flex-1 overflow-y-auto p-6">
         <Outlet />
       </main>
 

@@ -232,7 +232,9 @@ export const updateVariantSchema = z
     compareAtPrice: optionalMoneySchema,
     mediaId: z.uuid('Not a valid id').nullish(),
     status: entityStatusSchema.optional(),
-    quantity: quantitySchema.optional(),
+    // No `quantity`. Stock is editable when a variant is created and moves only
+    // through inventory adjust or restock afterwards, so that every change
+    // carries a reason and an author. See modules/inventory.
     lowStockThreshold: quantitySchema.optional(),
   })
   .refine((values) => Object.keys(values).length > 0, 'Nothing to update')
@@ -253,7 +255,6 @@ export const bulkVariantSchema = z.object({
         compareAtPrice: optionalMoneySchema,
         mediaId: z.uuid('Not a valid id').nullish(),
         status: entityStatusSchema.optional(),
-        quantity: quantitySchema.optional(),
         lowStockThreshold: quantitySchema.optional(),
       }),
     )

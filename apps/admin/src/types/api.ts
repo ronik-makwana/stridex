@@ -349,6 +349,107 @@ export type BulkResult = {
 /** What a presign hands back. The browser PUTs to `uploadUrl`, then records `key`. */
 export type PresignedUpload = { uploadUrl: string; key: string; url: string }
 
+// ─── inventory ───────────────────────────────────────────────────────────────
+
+export type InventoryTransactionType =
+  | 'RESTOCK'
+  | 'SALE'
+  | 'RESERVATION'
+  | 'RELEASE'
+  | 'RETURN'
+  | 'ADJUSTMENT'
+
+/**
+ * One sellable SKU and its three numbers. All three go out because admin is the
+ * one audience allowed to see them — "0 available against 20 on hand" is
+ * nonsense until the reservations underneath are visible.
+ */
+export type InventoryRow = {
+  variantId: string
+  inventoryId: string | null
+  sku: string
+  barcode: string | null
+  status: EntityStatus
+
+  productId: string
+  product: { id: string; title: string; slug: string; status: EntityStatus } | null
+  brand: ProductRef | null
+  /** 'Black / 9'. The only thing telling two SKUs of one product apart. */
+  optionLabel: string | null
+
+  quantity: number
+  reserved: number
+  /** quantity − reserved. Computed server side, never stored. */
+  available: number
+  lowStockThreshold: number
+  isOut: boolean
+  isLow: boolean
+
+  updatedAt: string
+}
+
+export type InventoryTransaction = {
+  id: string
+  type: InventoryTransactionType
+  /** Signed — the ledger has to sum to the number on the inventory row. */
+  quantity: number
+  /** 'Damaged', 'Restock'. Derived from the reference token, not the type. */
+  reason: string | null
+  referenceType: string | null
+  referenceId: string | null
+  note: string | null
+  /** Null means the system wrote it — checkout, or a webhook. */
+  createdBy: { id: string; email: string; name: string | null } | null
+  createdAt: string
+
+  /** Only the global ledger carries these; the per-variant one already knows. */
+  variantId: string | null
+  sku: string | null
+  product: { id: string; title: string; slug: string } | null
+}
+
+export type InventoryListQuery = {
+  page?: number
+  limit?: number
+  sort?: string
+  q?: string
+  brandId?: string
+  categoryId?: string
+  stock?: StockFilter
+  /** Low-stock view only: judge every row against this instead of its own. */
+  threshold?: number
+}
+
+export type TransactionListQuery = {
+  page?: number
+  limit?: number
+  q?: string
+  type?: InventoryTransactionType
+  variantId?: string
+  from?: string
+  to?: string
+}
+
+/** Served by the API so the client cannot drift from the ledger's own types. */
+export type AdjustReason = {
+  value: string
+  label: string
+  type: InventoryTransactionType
+}
+
+export type AdjustStockInput = {
+  mode: 'set' | 'change'
+  value: number
+  reason: string
+  note?: string | null
+}
+
+export type RestockInput = {
+  quantity: number
+  reference?: string | null
+  note?: string | null
+}
+
 export type AuthSession = {
   user: AdminUser
   accessToken: string

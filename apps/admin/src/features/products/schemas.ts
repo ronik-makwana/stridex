@@ -110,7 +110,6 @@ export type BulkVariantValues = {
     compareAtPrice?: string | null
     mediaId?: string | null
     status?: 'DRAFT' | 'ACTIVE' | 'ARCHIVED'
-    quantity?: number
     lowStockThreshold?: number
   }[]
 }

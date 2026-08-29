@@ -1,5 +1,5 @@
 import * as React from 'react'
-import { Sparkles } from 'lucide-react'
+import { Plus, Sparkles } from 'lucide-react'
 import { toast } from 'sonner'
 import { ApiError } from '@/lib/api-client'
 import {
@@ -10,6 +10,7 @@ import {
 import type { Product } from '@/types/api'
 import { Button } from '@/components/ui/button'
 import { Spinner } from '@/components/ui/spinner'
+import { AddVariantDialog } from './add-variant-dialog'
 import { GenerateVariantsDialog } from './generate-variants-dialog'
 import { VariantGrid } from './variant-grid'
 import {
@@ -50,6 +51,7 @@ export function ProductVariantsPanel({
   const deleteVariant = useDeleteVariant(product.id)
 
   const [generating, setGenerating] = React.useState(false)
+  const [adding, setAdding] = React.useState(false)
   const [saving, setSaving] = React.useState(false)
   const [selection, setSelection] = React.useState<Selection>(initialSelection ?? {})
 
@@ -167,6 +169,27 @@ export function ProductVariantsPanel({
         </div>
       )}
 
+      {/*
+        No options means no combinations to generate, but the product still
+        needs the one variant that carries its price and stock — otherwise it
+        can never pass the publish checklist. Hidden once it exists: with no
+        options every variant has the same empty combination, so there can only
+        ever be one.
+      */}
+      {variantOptionIds.length === 0 && variants.length === 0 && (
+        <div className="border-t px-5 py-4">
+          <div className="flex flex-wrap items-center gap-3">
+            <Button type="button" variant="secondary" onClick={() => setAdding(true)}>
+              <Plus className="size-4" />
+              Add variant
+            </Button>
+            <span className="text-muted-foreground text-xs">
+              No options, so this product sells as a single SKU
+            </span>
+          </div>
+        </div>
+      )}
+
       {variants.length > 0 && (
         <div className="border-t px-5 py-4">
           <VariantGrid
@@ -178,6 +201,8 @@ export function ProductVariantsPanel({
           />
         </div>
       )}
+
+      <AddVariantDialog productId={product.id} open={adding} onOpenChange={setAdding} />
 
       <GenerateVariantsDialog
         open={generating}

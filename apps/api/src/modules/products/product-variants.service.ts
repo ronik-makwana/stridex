@@ -8,6 +8,7 @@ import type {
   GenerateVariantsInput,
   UpdateVariantInput,
 } from '../../schemas/admin/product.schema.js'
+import { setStockTo } from '../inventory/inventory.service.js'
 import {
   assertProductExists,
   loadProductDetail,
@@ -23,65 +24,16 @@ import {
  */
 const MAX_COMBINATIONS = 250
 
-// ─── stock, written the only way stock is ever allowed to be written ────────
+// ─── stock ───────────────────────────────────────────────────────────────────
 //
-// Phase 6 builds the inventory module proper — adjust, restock, the ledger
-// screen. Until then variants still need an opening quantity, and it goes
-// through this rather than a bare `update`: row locked, delta computed from
-// what the lock read, matching `inventory_transactions` row written in the same
-// transaction. A stock number with no ledger entry behind it is the one thing
-// that makes the whole ledger untrustworthy.
-
-async function setQuantity(
-  tx: Prisma.TransactionClient,
-  variantId: string,
-  target: number,
-  options: { userId?: string; note?: string; referenceType?: string; referenceId?: string },
-): Promise<void> {
-  // SELECT ... FOR UPDATE: two admins saving the grid at once would otherwise
-  // both read 20, both write their own number, and the ledger would show two
-  // adjustments that do not add up to what is on the row.
-  const locked = await tx.$queryRaw<{ id: string; quantity: number }[]>`
-    SELECT id, quantity FROM inventories WHERE variant_id = CAST(${variantId} AS uuid) FOR UPDATE
-  `
-
-  const current = locked[0]
-  if (!current) {
-    const created = await tx.inventory.create({ data: { variantId, quantity: target } })
-    if (target !== 0) {
-      await tx.inventoryTransaction.create({
-        data: {
-          inventoryId: created.id,
-          type: 'ADJUSTMENT',
-          quantity: target,
-          referenceType: options.referenceType ?? 'variant.create',
-          referenceId: options.referenceId ?? null,
-          note: options.note ?? 'Opening stock',
-          createdByUserId: options.userId ?? null,
-        },
-      })
-    }
-    return
-  }
-
-  const delta = target - current.quantity
-  if (delta === 0) return
-
-  await tx.inventory.update({ where: { id: current.id }, data: { quantity: target } })
-  await tx.inventoryTransaction.create({
-    data: {
-      inventoryId: current.id,
-      type: 'ADJUSTMENT',
-      // Signed: the ledger has to sum to the on-hand number, so a reduction is
-      // a negative row, not a positive row with a different label.
-      quantity: delta,
-      referenceType: options.referenceType ?? 'variant.update',
-      referenceId: options.referenceId ?? null,
-      note: options.note ?? 'Adjusted from the product editor',
-      createdByUserId: options.userId ?? null,
-    },
-  })
-}
+// Opening stock only. A variant needs a quantity the moment it is created, and
+// that write goes through the inventory module like every other one: row
+// locked, delta derived from what the lock read, matching
+// `inventory_transactions` row in the same transaction.
+//
+// Changing stock afterwards is not this module's job. It happens through
+// adjust or restock, which require a reason — a number that moved with no
+// entry explaining it is exactly what the ledger exists to prevent.
 
 // ─── SKUs ────────────────────────────────────────────────────────────────────
 
@@ -259,11 +211,12 @@ export async function create(
       },
     })
     if (input.quantity) {
-      await setQuantity(tx, variant.id, input.quantity, {
-        userId,
+      await setStockTo(tx, variant.id, input.quantity, {
+        type: 'ADJUSTMENT',
         referenceType: 'variant.create',
         referenceId: variant.id,
         note: 'Opening stock',
+        userId,
       })
     }
 
@@ -323,7 +276,8 @@ export async function update(
   input: UpdateVariantInput,
   userId?: string,
 ): Promise<VariantRecord> {
-  const existing = await findOrThrow(productId, variantId)
+  // Ownership check: a variant of another product is a 404 on this URL.
+  await findOrThrow(productId, variantId)
 
   if (input.mediaId) {
     const media = await prisma.productMedia.findUnique({
@@ -357,14 +311,6 @@ export async function update(
         update: { lowStockThreshold: input.lowStockThreshold },
       })
     }
-    if (input.quantity !== undefined) {
-      await setQuantity(tx, variantId, input.quantity, {
-        userId,
-        referenceType: 'variant.update',
-        referenceId: variantId,
-        note: `Set from the product editor (${existing.sku})`,
-      })
-    }
   })
 
   return findOrThrow(productId, variantId)
@@ -385,13 +331,11 @@ export async function bulkUpdate(
   const ids = input.variants.map((row) => row.id)
   const owned = await prisma.productVariant.findMany({
     where: { id: { in: ids }, productId },
-    select: { id: true, sku: true },
+    select: { id: true },
   })
   if (owned.length !== new Set(ids).size) {
     throw notFound('Variant')
   }
-  const skuById = new Map(owned.map((row) => [row.id, row.sku]))
-
   await prisma.$transaction(async (tx) => {
     for (const row of input.variants) {
       const data: Prisma.ProductVariantUpdateInput = {}
@@ -412,14 +356,6 @@ export async function bulkUpdate(
           where: { variantId: row.id },
           create: { variantId: row.id, lowStockThreshold: row.lowStockThreshold },
           update: { lowStockThreshold: row.lowStockThreshold },
-        })
-      }
-      if (row.quantity !== undefined) {
-        await setQuantity(tx, row.id, row.quantity, {
-          userId,
-          referenceType: 'variant.bulk',
-          referenceId: row.id,
-          note: `Set from the variant grid (${skuById.get(row.id)})`,
         })
       }
     }
@@ -623,11 +559,12 @@ export async function generate(
       })
       await tx.inventory.create({ data: { variantId: variant.id, quantity: 0 } })
       if (input.defaults.quantity > 0) {
-        await setQuantity(tx, variant.id, input.defaults.quantity, {
-          userId,
+        await setStockTo(tx, variant.id, input.defaults.quantity, {
+          type: 'ADJUSTMENT',
           referenceType: 'variant.generate',
           referenceId: productId,
           note: 'Opening stock from generate',
+          userId,
         })
       }
     }

@@ -1,5 +1,5 @@
 import * as React from 'react'
-import { MoreHorizontal, Pencil, Trash2, Wand2 } from 'lucide-react'
+import { MoreHorizontal, Pencil, SlidersHorizontal, Trash2, Wand2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { ApiError } from '@/lib/api-client'
 import { cn } from '@/lib/utils'
@@ -21,6 +21,10 @@ import { Input } from '@/components/ui/input'
 import { Spinner } from '@/components/ui/spinner'
 import { VariantDrawer } from './variant-drawer'
 import {
+  AdjustStockDialog,
+  type StockTarget,
+} from '@/routes/inventory/adjust-stock-dialog'
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -28,8 +32,13 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 
-/** The editable columns, in tab order. */
-const COLUMNS = ['sku', 'price', 'compareAtPrice', 'quantity'] as const
+/**
+ * The editable columns, in tab order. Stock is not among them: it is editable
+ * when a variant is created and moves only through adjust or restock
+ * afterwards, so that every change carries a reason and an author. A grid cell
+ * cannot ask why.
+ */
+const COLUMNS = ['sku', 'price', 'compareAtPrice'] as const
 type Column = (typeof COLUMNS)[number]
 
 type Draft = Partial<Record<Column, string>>
@@ -37,8 +46,14 @@ type Draft = Partial<Record<Column, string>>
 const APPLY_TO_ALL: { value: Column; label: string }[] = [
   { value: 'price', label: 'Price' },
   { value: 'compareAtPrice', label: 'Compare at' },
-  { value: 'quantity', label: 'Stock' },
 ]
+
+const toStockTarget = (variant: ProductVariant): StockTarget => ({
+  variantId: variant.id,
+  sku: variant.sku,
+  quantity: variant.stock.quantity,
+  reserved: variant.stock.reserved,
+})
 
 /** Mirrors the API's default SKU rule — brand or title, then each option value. */
 function autoSku(product: Product, variant: ProductVariant, taken: Set<string>): string {
@@ -83,6 +98,7 @@ export function VariantGrid({
 }) {
   const [drafts, setDrafts] = React.useState<Record<string, Draft>>({})
   const [editing, setEditing] = React.useState<ProductVariant | null>(null)
+  const [adjusting, setAdjusting] = React.useState<StockTarget | null>(null)
   const [deleting, setDeleting] = React.useState<ProductVariant | null>(null)
   const [deleteBlock, setDeleteBlock] = React.useState<string | null>(null)
   const [applyColumn, setApplyColumn] = React.useState<Column>('price')
@@ -115,8 +131,6 @@ export function VariantGrid({
         return variant.price
       case 'compareAtPrice':
         return variant.compareAtPrice ?? ''
-      case 'quantity':
-        return String(variant.stock.quantity)
     }
   }
 
@@ -187,7 +201,6 @@ export function VariantGrid({
           ...(draft.compareAtPrice !== undefined
             ? { compareAtPrice: draft.compareAtPrice.trim() || null }
             : {}),
-          ...(draft.quantity !== undefined ? { quantity: Number(draft.quantity) || 0 } : {}),
         },
       ]
     })
@@ -309,19 +322,8 @@ export function VariantGrid({
                     />
                   </td>
 
-                  <td className="px-1 py-1">
-                    <Input
-                      data-cell={`${rowIndex}:quantity`}
-                      value={value(variant, 'quantity')}
-                      onChange={(event) => write(variant, 'quantity', event.target.value)}
-                      onKeyDown={(event) => onKeyDown(event, rowIndex, 'quantity')}
-                      inputMode="numeric"
-                      aria-label={`Stock on hand for row ${rowIndex + 1}`}
-                      className={cn(
-                        'h-8 text-right tabular-nums',
-                        draft.quantity !== undefined && 'border-ring',
-                      )}
-                    />
+                  <td className="px-3 py-1.5 text-right tabular-nums">
+                    {variant.stock.quantity}
                   </td>
 
                   <td
@@ -364,6 +366,10 @@ export function VariantGrid({
                           </div>
                         </div>
                         <DropdownMenuSeparator />
+                        <DropdownMenuItem onSelect={() => setAdjusting(toStockTarget(variant))}>
+                          <SlidersHorizontal className="size-4" />
+                          Adjust stock
+                        </DropdownMenuItem>
                         <DropdownMenuItem onSelect={() => setEditing(variant)}>
                           <Pencil className="size-4" />
                           Edit details
@@ -437,10 +443,18 @@ export function VariantGrid({
         </Button>
       </div>
 
+      <AdjustStockDialog target={adjusting} onOpenChange={(open) => !open && setAdjusting(null)} />
+
       <VariantDrawer
         product={product}
         variant={editing}
         onOpenChange={(open) => !open && setEditing(null)}
+        onAdjust={(target) => {
+          // Close the drawer first: two stacked dialogs trap focus in the one
+          // underneath and Esc dismisses the wrong thing.
+          setEditing(null)
+          setAdjusting(toStockTarget(target))
+        }}
       />
 
       {/*

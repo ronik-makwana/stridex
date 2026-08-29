@@ -15,6 +15,10 @@ import VariantOptionsPage from './variant-options'
 import VariantOptionDetailPage from './variant-options/variant-option-detail'
 import ProductsPage from './products'
 import ProductEditorPage, { NewProductPage } from './products/product-editor'
+import InventoryPage from './inventory'
+import LowStockPage from './inventory/low-stock'
+import InventoryTransactionsPage from './inventory/transactions'
+import InventoryVariantPage from './inventory/variant-detail'
 
 export const router = createBrowserRouter([
   {
@@ -46,6 +50,12 @@ export const router = createBrowserRouter([
           // fetches a uuid that does not exist.
           { path: 'products/new', element: <NewProductPage /> },
           { path: 'products/:id', element: <ProductEditorPage /> },
+          { path: 'inventory', element: <InventoryPage /> },
+          // Before ':variantId', or these are read as ids and the uuid schema
+          // rejects them with a 400.
+          { path: 'inventory/low-stock', element: <LowStockPage /> },
+          { path: 'inventory/transactions', element: <InventoryTransactionsPage /> },
+          { path: 'inventory/:variantId', element: <InventoryVariantPage /> },
           { path: '*', element: <NotFoundPage /> },
         ],
       },
