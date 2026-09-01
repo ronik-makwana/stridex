@@ -393,6 +393,45 @@ export type Payment = {
   clientPayload?: Record<string, unknown>
 }
 
+// ─── home ────────────────────────────────────────────────────────────────────
+
+/**
+ * One payload for the whole front page. Everything in it is shaped like
+ * something that already exists elsewhere — cards, tiles, categories — because
+ * the page is an arrangement, not a new kind of thing.
+ */
+export type HomePayload = {
+  /** Taken from the newest photographed product, not an uploaded asset. */
+  hero: { image: { url: string; altText: string | null } | null }
+  categories: { id: string; name: string; slug: string; image: string | null }[]
+  /** The marquee band: a backdrop, and every leaf category and live collection. */
+  topCategories: {
+    image: string | null
+    links: { id: string; label: string; to: string }[]
+  }
+  collections: {
+    id: string
+    name: string
+    slug: string
+    description: string | null
+    image: string | null
+  }[]
+  newArrivals: ProductCard[]
+  onSale: ProductCard[]
+  /**
+   * Curated quotes an admin publishes — not product reviews. A review is one
+   * customer's opinion of one product and lives on that product's page.
+   */
+  testimonials: {
+    id: string
+    quote: string
+    authorName: string
+    authorRole: string | null
+    rating: number | null
+    imageUrl: string | null
+  }[]
+}
+
 // ─── addresses ───────────────────────────────────────────────────────────────
 
 /**

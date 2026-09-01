@@ -703,6 +703,63 @@ export type PaymentListQuery = {
   provider?: string
 }
 
+// ─── testimonials ────────────────────────────────────────────────────────────
+
+/**
+ * Front-page copy, and not a review: a quote somebody chose to publish, with a
+ * name on it. Reviews belong to customers and live on their product's page.
+ */
+export type Testimonial = {
+  id: string
+  quote: string
+  authorName: string
+  authorRole: string | null
+  rating: number | null
+  imageUrl: string | null
+  status: EntityStatus
+  position: number
+  createdAt: string
+  updatedAt: string
+}
+
+export type TestimonialListQuery = {
+  page?: number
+  limit?: number
+  sort?: string
+  q?: string
+  status?: EntityStatus
+}
+
+// ─── reviews ─────────────────────────────────────────────────────────────────
+
+export type ReviewStatus = 'PUBLISHED' | 'HIDDEN'
+
+export type Review = {
+  id: string
+  rating: number
+  body: string
+  status: ReviewStatus
+  product: { id: string; title: string; slug: string }
+  /** The email is here and never on the storefront payload — moderation needs who. */
+  author: { id: string; email: string; name: string | null }
+  /** Derived per query: a paid order containing the product. Never stored. */
+  verifiedPurchase: boolean
+  createdAt: string
+  updatedAt: string
+}
+
+export type ReviewListQuery = {
+  page?: number
+  limit?: number
+  sort?: string
+  q?: string
+  status?: ReviewStatus
+  rating?: number
+  productId?: string
+}
+
+export type ReviewCounts = { published: number; hidden: number; total: number }
+
 // ─── customers and dashboard ─────────────────────────────────────────────────
 
 export type CustomerStatus = 'ACTIVE' | 'SUSPENDED'

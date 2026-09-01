@@ -4,6 +4,7 @@ import { shopCategoriesRouter } from '../modules/categories/shop.categories.rout
 import { shopCollectionsRouter } from '../modules/collections/shop.collections.routes.js'
 import { shopAddressesRouter } from '../modules/addresses/shop.addresses.routes.js'
 import { shopCartRouter } from '../modules/cart/shop.cart.routes.js'
+import { shopHomeRouter } from '../modules/home/shop.home.routes.js'
 import { shopCheckoutRouter } from '../modules/checkout/shop.checkout.routes.js'
 import { shopAccountRouter } from '../modules/account/shop.account.routes.js'
 import { shopOrdersRouter } from '../modules/orders/shop.orders.routes.js'
@@ -29,6 +30,9 @@ import { shopReviewsRouter } from '../modules/reviews/shop.reviews.routes.js'
 export const shopRouter: Router = Router()
 
 shopRouter.use('/auth', shopAuthRouter)
+
+// The front page, assembled from queries that already existed.
+shopRouter.use('/home', shopHomeRouter)
 
 // Public. A product page behind a session is a product page Google cannot read.
 shopRouter.use('/categories', shopCategoriesRouter)

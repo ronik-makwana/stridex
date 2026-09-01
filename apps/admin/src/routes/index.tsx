@@ -27,6 +27,8 @@ import PaymentsPage from './payments'
 import PaymentDetailPage from './payments/payment-detail'
 import CustomersPage from './customers'
 import CustomerDetailPage from './customers/customer-detail'
+import ReviewsPage from './reviews'
+import TestimonialsPage from './testimonials'
 
 export const router = createBrowserRouter([
   {
@@ -78,6 +80,10 @@ export const router = createBrowserRouter([
           // customer.
           { path: 'customers', element: <CustomersPage /> },
           { path: 'customers/:id', element: <CustomerDetailPage /> },
+          // Moderation: hide, unhide, delete. Never edit the words.
+          { path: 'reviews', element: <ReviewsPage /> },
+          // Front-page copy, not moderation — see the page's own note.
+          { path: 'testimonials', element: <TestimonialsPage /> },
           { path: '*', element: <NotFoundPage /> },
         ],
       },

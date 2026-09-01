@@ -161,3 +161,31 @@
 @utility animate-drawer-out-right { animation: shop-slide-out-right 200ms cubic-bezier(0.32, 0.72, 0, 1) }
 @utility animate-drawer-in-left { animation: shop-slide-in-left 260ms cubic-bezier(0.32, 0.72, 0, 1) }
 @utility animate-drawer-out-left { animation: shop-slide-out-left 200ms cubic-bezier(0.32, 0.72, 0, 1) }
+
+/*
+ * The "Top categories" marquee.
+ *
+ * Two keyframes rather than one plus a reversed direction, because the rows run
+ * opposite ways and `animation-direction: reverse` also reverses the easing —
+ * with a linear timing that is invisible, but it is one less thing to be wrong
+ * the day somebody eases it.
+ *
+ * Each row renders its chips twice and travels exactly half its width, so the
+ * second copy lands where the first began and the loop has no seam.
+ */
+@keyframes shop-marquee-left {
+  from { transform: translateX(0) }
+  to { transform: translateX(-50%) }
+}
+@keyframes shop-marquee-right {
+  from { transform: translateX(-50%) }
+  to { transform: translateX(0) }
+}
+
+/*
+ * Motion nobody asked for is motion somebody cannot read. The rows stop and the
+ * band becomes what it always was underneath: a list of links.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .shop-marquee { animation: none !important; }
+}

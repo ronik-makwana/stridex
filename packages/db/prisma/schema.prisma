@@ -1021,6 +1021,43 @@ model CouponRedemption {
   @@map("coupon_redemptions")
 }
 
+// ─────────────────────────────── testimonials ───────────────────────────────
+
+/**
+ * Brand testimonials — deliberately **not** product reviews.
+ * A review is a customer's opinion of one product, tied to their account and to
+ * a purchase, and it belongs on that product's page. A testimonial is
+ * merchandising: a quote somebody chose to put on the front page, often from a
+ * press cutting, an email, or a customer who agreed to be named. Sourcing one
+ * from the other would mean a shop could promote a five-star review to the home
+ * page without asking, and could never quote anything that did not arrive
+ * through the review form.
+ */
+model Testimonial {
+  id         String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  quote      String
+  authorName String       @map("author_name")
+  /**
+   * 'Marathon runner, Surat' — context, not a job title. Optional.
+   */
+  authorRole String?      @map("author_role")
+  /**
+   * Optional: not every quote comes with a number of stars, and a made-up one is worse than none.
+   */
+  rating     Int?
+  imageUrl   String?      @map("image_url")
+  status     EntityStatus @default(DRAFT)
+  /**
+   * Drag order on the admin screen; the front page renders it.
+   */
+  position   Int          @default(0)
+  createdAt  DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt  DateTime     @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@index([status, position])
+  @@map("testimonials")
+}
+
 // ─────────────────────────────── settings ───────────────────────────────
 
 /**

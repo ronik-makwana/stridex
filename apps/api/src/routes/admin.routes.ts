@@ -15,6 +15,8 @@ import {
 import { adminOrdersRouter } from '../modules/orders/admin.orders.routes.js'
 import { adminPaymentsRouter } from '../modules/payments/admin.payments.routes.js'
 import { adminProductsRouter } from '../modules/products/admin.products.routes.js'
+import { adminReviewsRouter } from '../modules/reviews/admin.reviews.routes.js'
+import { adminTestimonialsRouter } from '../modules/testimonials/admin.testimonials.routes.js'
 import { adminTagsRouter } from '../modules/tags/admin.tags.routes.js'
 import { adminVariantOptionsRouter } from '../modules/variant-options/admin.variant-options.routes.js'
 import { adminUploadsRouter } from '../modules/uploads/admin.uploads.routes.js'
@@ -47,6 +49,14 @@ adminRouter.use('/payments', adminPaymentsRouter)
 // Support: read-heavy, with two writes that can act on an account but never as
 // one — no password editing, no impersonation.
 adminRouter.use('/customers', adminCustomersRouter)
+
+// Moderation: hide, unhide, and delete for abuse. Never edit — the words are
+// the customer's.
+adminRouter.use('/reviews', adminReviewsRouter)
+
+// Front-page copy, and deliberately not the same thing as a review: a quote
+// somebody chose to publish, rather than a customer's opinion of a product.
+adminRouter.use('/testimonials', adminTestimonialsRouter)
 
 // The first screen anybody opens, and the palette that skips it.
 adminRouter.use('/dashboard', adminDashboardRouter)

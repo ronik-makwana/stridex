@@ -12,6 +12,8 @@ import {
   PanelLeft,
   PanelLeftClose,
   Layers,
+  MessageSquare,
+  MessageSquareQuote,
   Settings,
   ShoppingCart,
   Tags,
@@ -57,6 +59,8 @@ const NAV_SECTIONS = [
       { to: '/orders', label: 'Orders', icon: ShoppingCart },
       { to: '/payments', label: 'Payments', icon: CreditCard },
       { to: '/customers', label: 'Customers', icon: Users },
+      { to: '/reviews', label: 'Reviews', icon: MessageSquare },
+      { to: '/testimonials', label: 'Testimonials', icon: MessageSquareQuote },
     ],
   },
   {
