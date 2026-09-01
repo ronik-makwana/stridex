@@ -34,6 +34,33 @@ export const authenticate: RequestHandler = (req, _res, next) => {
 }
 
 /**
+ * Attaches `req.user` when a valid token is present and carries on regardless.
+ *
+ * For endpoints that are public but behave differently for a signed-in
+ * customer: the reviews list shows an author their own HIDDEN review and marks
+ * their row `isMine`, and neither is a reason to demand a session from everyone
+ * else. A bad or expired token is treated as no token — this route was never
+ * going to 401, so failing here would only convert a public read into an error.
+ */
+export const authenticateOptional: RequestHandler = (req, _res, next) => {
+  const token = bearerToken(req)
+  if (!token) return next()
+
+  try {
+    const payload = verifyAccessToken(token)
+    req.user = {
+      id: payload.sub,
+      email: payload.email,
+      role: payload.role,
+      sessionId: payload.sid,
+    }
+  } catch {
+    // Deliberately ignored. See above.
+  }
+  next()
+}
+
+/**
  * The strict variant: also confirms the session is still live and the user is
  * not suspended. Costs one indexed read, so use it only where an immediately
  * revoked session must not survive — `/auth/me` and destructive admin actions.

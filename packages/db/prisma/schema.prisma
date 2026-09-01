@@ -99,6 +99,11 @@ enum PaymentTransactionType {
   VOID
 }
 
+enum ReviewStatus {
+  PUBLISHED
+  HIDDEN
+}
+
 enum AddressType {
   SHIPPING
   BILLING
@@ -126,6 +131,7 @@ model User {
   cart                 Cart?
   wishlist             Wishlist?
   orders               Order[]
+  reviews              Review[]
   orderStatusChanges   OrderStatusHistory[]
   inventoryTransactions InventoryTransaction[]
 
@@ -338,6 +344,7 @@ model Product {
   variants       ProductVariant[]
   collections    CollectionProduct[]
   wishlistItems  WishlistItem[]
+  reviews        Review[]
 
   @@index([status, createdAt])
   @@index([brandId])
@@ -571,6 +578,40 @@ model WishlistItem {
 
   @@unique([wishlistId, productId])
   @@map("wishlist_items")
+}
+
+// ─────────────────────────────── reviews ───────────────────────────────
+
+// Deliberately has no `verified_purchase` column. Whether someone bought the
+// product is derived per query — does this user have a PAID order containing a
+// variant of it — because storing it means keeping it true forever: a refund, a
+// chargeback or a returned order all falsify a stored flag and nothing would
+// go back and fix it.
+//
+// Nor is there a denormalised rating average on `products`. The average is one
+// grouped query per page; a stored column is a second source of truth that
+// drifts the first time a review is hidden by a moderator.
+model Review {
+  id        String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  productId String       @map("product_id") @db.Uuid
+  userId    String       @map("user_id") @db.Uuid
+  rating    Int
+  body      String
+  status    ReviewStatus @default(PUBLISHED)
+  createdAt DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime     @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // One review per person per product. This constraint is the guard: a second
+  // attempt is a 409, not a silently created duplicate.
+  @@unique([productId, userId])
+  // The product page reads published reviews newest-first, and the summary
+  // groups by rating over the same set.
+  @@index([productId, status, createdAt])
+  @@index([userId, createdAt])
+  @@map("reviews")
 }
 
 // ─────────────────────────────── orders ───────────────────────────────

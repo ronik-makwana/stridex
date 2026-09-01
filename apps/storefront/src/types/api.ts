@@ -84,3 +84,123 @@ export type ApiErrorBody = {
 export type StockBucket = 'IN_STOCK' | 'LOW_STOCK' | 'SOLD_OUT'
 
 export type MessageResponse = { message: string }
+
+// ─── catalog ─────────────────────────────────────────────────────────────────
+
+export type Ref = { id: string; name: string; slug: string }
+
+export type ProductImage = {
+  id: string
+  url: string
+  altText: string | null
+  type: 'IMAGE' | 'VIDEO'
+  sortOrder: number
+}
+
+/** One row of the spec table. The API resolves the display string. */
+export type ProductAttribute = {
+  id: string
+  attributeId: string
+  name: string
+  slug: string
+  value: string
+}
+
+export type OptionValue = {
+  id: string
+  value: string
+  slug: string
+  /** Present on colour axes only; drives the swatches. */
+  swatchHex: string | null
+  position: number
+}
+
+/** An axis of choice — Size, Colour — in this product's own order. */
+export type ProductOption = {
+  id: string
+  name: string
+  slug: string
+  position: number
+  values: OptionValue[]
+}
+
+export type ProductVariant = {
+  id: string
+  sku: string
+  price: string
+  compareAtPrice: string | null
+  discountPercent: number | null
+  /** Sorted into the product's axis order. Matching is set-based regardless. */
+  optionValueIds: string[]
+  stock: StockBucket
+  /** Capped at 10 by the API; a display bound, never a guarantee. */
+  maxQuantity: number
+  /** Which image to show for this variant. Null across the catalogue today. */
+  mediaId: string | null
+}
+
+export type Product = {
+  id: string
+  slug: string
+  title: string
+  description: string | null
+  brand: Ref | null
+  category: Ref | null
+  /** Root first, this product's category last. */
+  breadcrumbs: Ref[]
+  media: ProductImage[]
+  attributes: ProductAttribute[]
+  options: ProductOption[]
+  variants: ProductVariant[]
+  priceRange: { min: string; max: string } | null
+  stock: StockBucket
+  publishedAt: string | null
+}
+
+/** The grid and "you may also like" shape. Much smaller than Product. */
+export type ProductCard = {
+  id: string
+  slug: string
+  title: string
+  brand: Ref | null
+  image: { url: string; altText: string | null } | null
+  price: string | null
+  compareAtPrice: string | null
+  discountPercent: number | null
+  stock: StockBucket
+}
+
+// ─── reviews ─────────────────────────────────────────────────────────────────
+
+export type ReviewStatus = 'PUBLISHED' | 'HIDDEN'
+
+export type Review = {
+  id: string
+  rating: number
+  body: string
+  /** A display name — "Rhea K." Never an email; this list is public. */
+  author: string
+  /** Derived per request from PAID orders, never stored. */
+  verifiedPurchase: boolean
+  isMine: boolean
+  status: ReviewStatus
+  createdAt: string
+  updatedAt: string
+}
+
+export type RatingDistribution = Record<1 | 2 | 3 | 4 | 5, number>
+
+export type ReviewSummary = {
+  average: number
+  total: number
+  distribution: RatingDistribution
+}
+
+export type ReviewListResponse = {
+  data: Review[]
+  meta: ListMeta & {
+    summary: ReviewSummary
+    /** null for a guest; null for a customer who has not reviewed yet. */
+    myReviewId: string | null
+  }
+}

@@ -3,6 +3,7 @@ import { ShopLayout } from '@/layouts/ShopLayout'
 import { AuthLayout } from '@/layouts/AuthLayout'
 import { RedirectIfAuthenticated, RequireAuth } from '@/components/require-auth'
 import HomePage from './home'
+import ProductPage from './product'
 import NotFoundPage from './not-found'
 import LoginPage from './auth/login'
 import RegisterPage from './auth/register'
@@ -29,7 +30,9 @@ export const router = createBrowserRouter([
     children: [
       { index: true, element: <HomePage /> },
 
-      // Phase 12: /p/:slug   Phase 13: /c/:slug, /collections, /search
+      { path: 'p/:slug', element: <ProductPage /> },
+
+      // Phase 13: /c/:slug, /collections, /collections/:slug, /search
       // Phase 14: /cart, /wishlist
 
       {
