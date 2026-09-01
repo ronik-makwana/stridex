@@ -703,6 +703,114 @@ export type PaymentListQuery = {
   provider?: string
 }
 
+// ─── customers and dashboard ─────────────────────────────────────────────────
+
+export type CustomerStatus = 'ACTIVE' | 'SUSPENDED'
+
+export type Customer = {
+  id: string
+  email: string
+  firstName: string | null
+  lastName: string | null
+  name: string | null
+  phone: string | null
+  status: CustomerStatus
+  /** Derived from `email_verified_at`, not a column of its own. */
+  emailVerified: boolean
+  emailVerifiedAt: string | null
+  orderCount: number
+  /** PAID orders only. A failed checkout is not money anybody spent. */
+  totalSpent: string
+  createdAt: string
+  updatedAt: string
+}
+
+export type CustomerListQuery = {
+  page?: number
+  limit?: number
+  sort?: string
+  q?: string
+  status?: CustomerStatus
+  verified?: boolean | 'true' | 'false'
+}
+
+export type CustomerAddress = {
+  id: string
+  fullName: string
+  phone: string
+  addressLine1: string
+  addressLine2: string | null
+  city: string
+  state: string
+  country: string
+  postalCode: string
+  isDefault: boolean
+  createdAt: string
+}
+
+export type CustomerBasket = {
+  cart: {
+    id: string
+    variantId: string
+    title: string
+    slug: string
+    sku: string
+    quantity: number
+    price: string
+    addedAt: string
+  }[]
+  wishlist: { id: string; productId: string; title: string; slug: string; savedAt: string }[]
+}
+
+export type CustomerSession = {
+  id: string
+  userAgent: string | null
+  ipAddress: string | null
+  createdAt: string
+  expiresAt: string
+}
+
+export type DashboardSummary = {
+  revenue: { value: string; orderCount: number; changePercent: number | null }
+  orders: { value: number; changePercent: number | null }
+  products: { value: number; drafts: number }
+  customers: { value: number; changePercent: number | null }
+  window: { from: string; to: string }
+}
+
+export type SalesPoint = { at: string; revenue: string; orders: number }
+
+export type RecentOrder = {
+  id: string
+  orderNumber: string
+  status: OrderStatus
+  paymentStatus: OrderPaymentStatus
+  totalAmount: string
+  customer: string
+  createdAt: string
+}
+
+export type LowStockRow = {
+  variantId: string
+  productId: string
+  title: string
+  sku: string
+  available: number
+  threshold: number
+}
+
+export type TopProduct = { title: string; sku: string; units: number; revenue: string }
+
+/** Each line links to the pre-filtered list that shows exactly those rows. */
+export type AttentionLine = { key: string; count: number; label: string; to: string }
+
+export type SearchHit = { id: string; label: string; hint: string; to: string }
+export type SearchResults = {
+  products: SearchHit[]
+  orders: SearchHit[]
+  customers: SearchHit[]
+}
+
 /** Every successful response is wrapped in `data`; lists add `meta`. */
 export type ApiResponse<T> = { data: T }
 

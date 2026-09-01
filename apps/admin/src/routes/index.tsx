@@ -25,6 +25,8 @@ import OrdersPage from './orders'
 import OrderDetailPage from './orders/order-detail'
 import PaymentsPage from './payments'
 import PaymentDetailPage from './payments/payment-detail'
+import CustomersPage from './customers'
+import CustomerDetailPage from './customers/customer-detail'
 
 export const router = createBrowserRouter([
   {
@@ -72,6 +74,10 @@ export const router = createBrowserRouter([
           { path: 'orders/:id', element: <OrderDetailPage /> },
           { path: 'payments', element: <PaymentsPage /> },
           { path: 'payments/:id', element: <PaymentDetailPage /> },
+          // Support: read-heavy, two writes, neither of which can act as the
+          // customer.
+          { path: 'customers', element: <CustomersPage /> },
+          { path: 'customers/:id', element: <CustomerDetailPage /> },
           { path: '*', element: <NotFoundPage /> },
         ],
       },

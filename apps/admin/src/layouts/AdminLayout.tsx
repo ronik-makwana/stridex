@@ -20,6 +20,7 @@ import {
 } from 'lucide-react'
 import { useAuth } from '@/lib/auth'
 import { cn } from '@/lib/utils'
+import { CommandPalette } from '@/components/command-palette'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -55,7 +56,7 @@ const NAV_SECTIONS = [
       { to: '/inventory', label: 'Inventory', icon: Warehouse },
       { to: '/orders', label: 'Orders', icon: ShoppingCart },
       { to: '/payments', label: 'Payments', icon: CreditCard },
-      { to: '/customers', label: 'Customers', icon: Users, disabled: true },
+      { to: '/customers', label: 'Customers', icon: Users },
     ],
   },
   {
@@ -219,6 +220,10 @@ export function AdminLayout() {
       <main className="min-w-0 flex-1 overflow-y-auto p-6">
         <Outlet />
       </main>
+
+      {/* Mounted once in the shell: ⌘K works from every screen, and a palette
+          per page would be a palette that forgets what you typed. */}
+      <CommandPalette />
 
       <SessionExpiredDialog />
     </div>

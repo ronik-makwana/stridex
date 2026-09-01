@@ -7,6 +7,11 @@ import { adminBrandsRouter } from '../modules/brands/admin.brands.routes.js'
 import { adminCategoriesRouter } from '../modules/categories/admin.categories.routes.js'
 import { adminCollectionsRouter } from '../modules/collections/admin.collections.routes.js'
 import { adminInventoryRouter } from '../modules/inventory/admin.inventory.routes.js'
+import { adminCustomersRouter } from '../modules/customers/admin.customers.routes.js'
+import {
+  adminDashboardRouter,
+  adminSearchRouter,
+} from '../modules/dashboard/admin.dashboard.routes.js'
 import { adminOrdersRouter } from '../modules/orders/admin.orders.routes.js'
 import { adminPaymentsRouter } from '../modules/payments/admin.payments.routes.js'
 import { adminProductsRouter } from '../modules/products/admin.products.routes.js'
@@ -39,4 +44,10 @@ adminRouter.use('/uploads', adminUploadsRouter)
 adminRouter.use('/orders', adminOrdersRouter)
 adminRouter.use('/payments', adminPaymentsRouter)
 
-// Phase 9: customers, dashboard, settings.
+// Support: read-heavy, with two writes that can act on an account but never as
+// one — no password editing, no impersonation.
+adminRouter.use('/customers', adminCustomersRouter)
+
+// The first screen anybody opens, and the palette that skips it.
+adminRouter.use('/dashboard', adminDashboardRouter)
+adminRouter.use('/search', adminSearchRouter)
