@@ -2,18 +2,22 @@ import * as React from 'react'
 import { useNavigate } from 'react-router'
 import type { ColumnDef } from '@tanstack/react-table'
 import {
+  Check,
   CirclePlay,
   CircleStop,
+  Copy,
   MoreHorizontal,
   Pencil,
   Plus,
   SearchX,
+  ShoppingBag,
   Tag,
   Trash2,
+  Truck,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { ApiError } from '@/lib/api-client'
-import { formatDate } from '@/lib/format'
+import { cn } from '@/lib/utils'
 import { useListParams } from '@/hooks/use-list-params'
 import { useDiscounts } from '@/features/discounts/queries'
 import { useDeleteDiscount, useSetDiscountState } from '@/features/discounts/mutations'
@@ -40,8 +44,35 @@ const KIND_OPTIONS = [
   { value: 'SHIPPING', label: 'Shipping' },
 ]
 
+/**
+ * The same icon means the same kind of discount everywhere on this page: the
+ * create menu, the type column and the combination column all read from here,
+ * so a tag is always a product discount and a truck is always shipping.
+ */
+const KIND = {
+  PRODUCT: { label: 'Product discount', short: 'product', icon: Tag },
+  ORDER: { label: 'Order discount', short: 'order', icon: ShoppingBag },
+  SHIPPING: { label: 'Shipping discount', short: 'shipping', icon: Truck },
+} as const
+
+/** Kind → the row field that says whether this discount stacks with that kind. */
+const COMBINES_WITH = {
+  PRODUCT: 'combinesWithProduct',
+  ORDER: 'combinesWithOrder',
+  SHIPPING: 'combinesWithShipping',
+} as const
+
+const KINDS = ['PRODUCT', 'ORDER', 'SHIPPING'] as const
+
 /** "20% off · 3 products" — what it does and what it touches, in one column. */
 function describe(discount: DiscountRow) {
+  if (discount.kind !== 'PRODUCT') {
+    const what = discount.kind === 'ORDER' ? 'the order' : 'delivery'
+    return discount.type === 'PERCENT'
+      ? `${Number(discount.value)}% off ${what}`
+      : `₹${Number(discount.value)} off ${what}`
+  }
+
   const value =
     discount.type === 'PERCENT'
       ? `${Number(discount.value)}% off`
@@ -61,6 +92,79 @@ function describe(discount: DiscountRow) {
           : 'collections'
 
   return discount.appliesTo ? `${value} · ${discount.targetCount} ${noun}` : value
+}
+
+/**
+ * The code is the thing an operator hands to a customer, so it is copyable from
+ * the list rather than only from the editor. `data-row-action` keeps the copy
+ * from also opening the row.
+ */
+function CodeCell({ code }: { code: string }) {
+  const [copied, setCopied] = React.useState(false)
+  const timer = React.useRef<number | undefined>(undefined)
+
+  React.useEffect(() => () => window.clearTimeout(timer.current), [])
+
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(code)
+      setCopied(true)
+      timer.current = window.setTimeout(() => setCopied(false), 1500)
+    } catch {
+      toast.error('Could not copy the code')
+    }
+  }
+
+  return (
+    <div className="flex items-center gap-1">
+      <span className="font-mono text-sm">{code}</span>
+      <div data-row-action>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="text-muted-foreground hover:text-foreground size-7"
+          title={copied ? 'Copied' : 'Copy code'}
+          aria-label={copied ? `${code} copied` : `Copy ${code}`}
+          onClick={() => void copy()}
+        >
+          {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
+        </Button>
+      </div>
+    </div>
+  )
+}
+
+/**
+ * All three icons, always, so the column is a row of the same three slots on
+ * every line: lit where this discount stacks with that kind, dimmed where it
+ * does not. Showing only the lit ones would make "combines with shipping" and
+ * "combines with product" look like different columns.
+ */
+function CombinationCell({ discount }: { discount: DiscountRow }) {
+  const on = KINDS.filter((kind) => discount[COMBINES_WITH[kind]])
+
+  return (
+    <div className="flex items-center gap-1.5">
+      {KINDS.map((kind) => {
+        const Icon = KIND[kind].icon
+        return (
+          <Icon
+            key={kind}
+            className={cn(
+              'size-4',
+              discount[COMBINES_WITH[kind]] ? 'text-foreground' : 'text-muted-foreground/30',
+            )}
+            aria-hidden
+          />
+        )
+      })}
+      <span className="sr-only">
+        {on.length
+          ? `Combines with ${on.map((kind) => KIND[kind].short).join(', ')} discounts`
+          : 'Does not combine'}
+      </span>
+    </div>
+  )
 }
 
 export default function DiscountsPage() {
@@ -111,7 +215,7 @@ export default function DiscountsPage() {
         accessorKey: 'code',
         header: 'Code',
         meta: { sortKey: 'code' },
-        cell: ({ row }) => <span className="font-mono text-sm">{row.original.code}</span>,
+        cell: ({ row }) => <CodeCell code={row.original.code} />,
       },
       {
         id: 'value',
@@ -122,14 +226,26 @@ export default function DiscountsPage() {
       },
       {
         id: 'eligibility',
-        header: 'Customers',
+        header: 'Eligibility',
         cell: ({ row }) => (
           <span className="text-muted-foreground text-sm">
             {row.original.eligibility === 'ALL_CUSTOMERS'
-              ? 'All'
-              : `${row.original.customerCount} chosen`}
+              ? 'All customers'
+              : `${row.original.customerCount} ${row.original.customerCount === 1 ? 'customer' : 'customers'}`}
           </span>
         ),
+      },
+      {
+        id: 'kind',
+        header: 'Type',
+        cell: ({ row }) => (
+          <span className="text-muted-foreground text-sm">{KIND[row.original.kind].label}</span>
+        ),
+      },
+      {
+        id: 'combination',
+        header: 'Combination',
+        cell: ({ row }) => <CombinationCell discount={row.original} />,
       },
       {
         accessorKey: 'usedCount',
@@ -143,16 +259,6 @@ export default function DiscountsPage() {
           row.original.usageLimit
             ? `${row.original.usedCount} / ${row.original.usageLimit}`
             : row.original.usedCount,
-      },
-      {
-        id: 'window',
-        header: 'Active',
-        cell: ({ row }) => (
-          <span className="text-muted-foreground text-sm">
-            {formatDate(row.original.startsAt)}
-            {row.original.endsAt ? ` – ${formatDate(row.original.endsAt)}` : ' onwards'}
-          </span>
-        ),
       },
       {
         accessorKey: 'state',
@@ -215,10 +321,45 @@ export default function DiscountsPage() {
         title="Discounts"
         description="Codes customers type at checkout. The rules are stored here; the money is worked out at checkout."
         actions={
-          <Button onClick={() => void navigate('/discounts/new')}>
-            <Plus className="size-4" />
-            Create discount
-          </Button>
+          /*
+            The kind is chosen here rather than inside the form, because it
+            decides which questions the form asks. Shipping discounts are listed
+            and disabled: the shape of the feature is obvious from day one,
+            rather than a menu that grows later.
+          */
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button>
+                <Plus className="size-4" />
+                Create discount
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-56">
+              <DropdownMenuItem onSelect={() => void navigate('/discounts/new')}>
+                <Tag className="size-4" />
+                <span>
+                  Product discount
+                  <span className="text-muted-foreground block text-xs">
+                    Off chosen products
+                  </span>
+                </span>
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => void navigate('/discounts/new?kind=ORDER')}>
+                <ShoppingBag className="size-4" />
+                <span>
+                  Order discount
+                  <span className="text-muted-foreground block text-xs">Off the whole cart</span>
+                </span>
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => void navigate('/discounts/new?kind=SHIPPING')}>
+                <Truck className="size-4" />
+                <span>
+                  Shipping discount
+                  <span className="text-muted-foreground block text-xs">Off the delivery charge</span>
+                </span>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         }
       />
 

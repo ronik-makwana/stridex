@@ -493,19 +493,38 @@ function Live({
           <ul className="mt-4 space-y-3">
             {session.items.map((item) => (
               <li key={item.id} className="flex gap-3">
-                <div className="bg-secondary relative h-16 w-14 shrink-0 overflow-hidden">
-                  {item.image && (
-                    <img
-                      src={item.image.url}
-                      alt={item.image.altText ?? item.title}
-                      className="absolute inset-0 h-full w-full object-cover"
-                    />
-                  )}
+                {/*
+                  The count sits on the corner of the photo rather than in the
+                  line of text below it: what a customer checks in a summary is
+                  "the right things, in the right numbers", and a quantity
+                  buried after the colour and size is one they have to hunt for.
+
+                  Two elements deep because the frame crops the photo, and a
+                  badge that overhangs the corner cannot live inside something
+                  with `overflow-hidden`.
+                */}
+                <div className="relative shrink-0">
+                  <div className="bg-secondary relative h-16 w-14 overflow-hidden">
+                    {item.image && (
+                      <img
+                        src={item.image.url}
+                        alt={item.image.altText ?? item.title}
+                        className="absolute inset-0 h-full w-full object-cover"
+                      />
+                    )}
+                  </div>
+                  <span
+                    aria-hidden
+                    className="bg-background text-muted-foreground absolute -top-2 -right-2 flex size-5 items-center justify-center rounded-full border text-[10px] leading-none tabular-nums"
+                  >
+                    {item.quantity}
+                  </span>
+                  <span className="sr-only">{`Quantity ${item.quantity}`}</span>
                 </div>
                 <div className="min-w-0 flex-1 text-sm">
                   <p className="truncate">{item.title}</p>
                   <p className="text-muted-foreground text-xs">
-                    {item.options.map((option) => option.value).join(' / ')} · {item.quantity}
+                    {item.options.map((option) => option.value).join(' / ')}
                   </p>
 
                   {/*
@@ -557,17 +576,48 @@ function Live({
           */}
           <dl className="mt-4 space-y-1.5 border-t pt-4 text-sm">
             <Row label="Subtotal" value={session.goodsTotal} />
+
+            {/*
+              An order discount is against the whole cart, so unlike a product
+              discount there is no line to show it on — it gets a row, named by
+              its code so the customer can tell which of their codes did it.
+            */}
+            {session.discounts
+              .filter((discount) => discount.kind === 'ORDER' && Number(discount.amount) > 0)
+              .map((discount) => (
+                <Row key={discount.couponId} label={discount.code} value={`-${discount.amount}`} />
+              ))}
             <Row
               label="Shipping"
               value={session.shippingAmount}
               hint={Number(session.shippingAmount) === 0 ? 'Free delivery applied' : undefined}
             />
+
+            {/* Under the rate it came off, so the two read as one thought. */}
+            {session.discounts
+              .filter((discount) => discount.kind === 'SHIPPING' && Number(discount.amount) > 0)
+              .map((discount) => (
+                <Row key={discount.couponId} label={discount.code} value={`-${discount.amount}`} />
+              ))}
           </dl>
 
           <div className="mt-3 flex items-baseline justify-between border-t pt-3">
             <span className="text-sm">Total</span>
             <span className="tabular-nums">{formatMoney(session.totalAmount)}</span>
           </div>
+
+          {/*
+            The one figure that is not part of the arithmetic above: everything
+            saved, in one place, after the customer has read what they are
+            paying. Hidden entirely when it is zero — "Total savings ₹0" is a
+            line that only ever points out what somebody did not get.
+          */}
+          {Number(session.totalDiscount) > 0 && (
+            <p className="mt-2 flex items-baseline justify-between">
+              <span className="text-xs tracking-[0.14em] uppercase">Total savings</span>
+              <span className="text-sm tabular-nums">{formatMoney(session.totalDiscount)}</span>
+            </p>
+          )}
 
           <Button
             variant="accent"

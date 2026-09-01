@@ -138,6 +138,10 @@ function scalars(input: CreateDiscountInput) {
         ? new Prisma.Decimal(input.minCartValue)
         : null,
     minQuantity: input.minRequirement === 'ITEM_QUANTITY' ? input.minQuantity : null,
+    maxShippingAmount:
+      input.kind === 'SHIPPING' && input.maxShippingAmount
+        ? new Prisma.Decimal(input.maxShippingAmount)
+        : null,
     usageLimit: input.usageLimit,
     perUserLimit: input.perUserLimit,
     combinesWithProduct: input.combinesWithProduct,

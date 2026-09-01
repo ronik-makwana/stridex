@@ -82,6 +82,8 @@ export function serializeAdminDiscount(coupon: AdminDiscountRecord) {
     minRequirement: coupon.minRequirement,
     minCartValue: coupon.minCartValue ? money(coupon.minCartValue) : null,
     minQuantity: coupon.minQuantity,
+    /** Shipping discounts: the rate above which this does not apply. */
+    maxShippingAmount: coupon.maxShippingAmount ? money(coupon.maxShippingAmount) : null,
 
     usageLimit: coupon.usageLimit,
     perUserLimit: coupon.perUserLimit,
@@ -124,6 +126,10 @@ export function serializeAdminDiscountRow(coupon: AdminDiscountRecord) {
     customerCount: full.customers.length,
     usageLimit: full.usageLimit,
     usedCount: full.usedCount,
+    /** The three combination flags: the list shows them as icons, lit or not. */
+    combinesWithProduct: full.combinesWithProduct,
+    combinesWithOrder: full.combinesWithOrder,
+    combinesWithShipping: full.combinesWithShipping,
     startsAt: full.startsAt,
     endsAt: full.endsAt,
     state: full.state,

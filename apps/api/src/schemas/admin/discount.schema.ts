@@ -71,6 +71,9 @@ const bodySchema = z.object({
   minCartValue: optionalMoney,
   minQuantity: optionalPositiveInt,
 
+  /** SHIPPING only: the rate above which the discount does not apply. */
+  maxShippingAmount: optionalMoney,
+
   // ── how often ─────────────────────────────────────────────────────────────
   usageLimit: optionalPositiveInt,
   perUserLimit: optionalPositiveInt,
@@ -129,6 +132,14 @@ function refine(values: z.infer<typeof bodySchema>, ctx: z.RefinementCtx) {
   }
   if (values.minRequirement === 'ITEM_QUANTITY' && !values.minQuantity) {
     ctx.addIssue({ code: 'custom', path: ['minQuantity'], message: 'Enter a minimum quantity' })
+  }
+
+  if (values.kind !== 'SHIPPING' && values.maxShippingAmount) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['maxShippingAmount'],
+      message: 'Only a shipping discount can exclude rates',
+    })
   }
 
   if (values.endsAt && values.endsAt <= values.startsAt) {

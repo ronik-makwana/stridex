@@ -15,7 +15,7 @@ import {
 } from '@/features/discounts/mutations'
 import { discountFormSchema, type DiscountFormValues } from '@/features/discounts/schemas'
 import type { DiscountValues } from '@/features/discounts/api'
-import type { Discount } from '@/types/api'
+import type { Discount, DiscountKind } from '@/types/api'
 import { PageHeader } from '@/components/page-header'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { Alert, AlertDescription } from '@/components/ui/alert'
@@ -67,6 +67,8 @@ function defaultsForNew(): DiscountFormValues {
     minRequirement: 'NONE',
     minCartValue: '',
     minQuantity: '',
+    excludeExpensiveShipping: false,
+    maxShippingAmount: '',
     limitTotal: false,
     usageLimit: '',
     onePerCustomer: false,
@@ -95,6 +97,10 @@ function toFormValues(discount: Discount): DiscountFormValues {
     minRequirement: discount.minRequirement,
     minCartValue: discount.minCartValue ? String(Number(discount.minCartValue)) : '',
     minQuantity: discount.minQuantity ? String(discount.minQuantity) : '',
+    excludeExpensiveShipping: discount.maxShippingAmount !== null,
+    maxShippingAmount: discount.maxShippingAmount
+      ? String(Number(discount.maxShippingAmount))
+      : '',
     limitTotal: discount.usageLimit !== null,
     usageLimit: discount.usageLimit ? String(discount.usageLimit) : '',
     onePerCustomer: discount.perUserLimit === 1,
@@ -116,7 +122,11 @@ function toFormValues(discount: Discount): DiscountFormValues {
  * whatever the input still holds: an operator who typed a minimum, changed
  * their mind and switched to "no minimum" did not mean to keep the number.
  */
-function toApiValues(values: DiscountFormValues, selections: Selections): DiscountValues {
+function toApiValues(
+  values: DiscountFormValues,
+  selections: Selections,
+  kind: DiscountKind,
+): DiscountValues {
   const startsAt = new Date(`${values.startsAtDate}T${values.startsAtTime || '00:00'}`)
   const endsAt = values.hasEndDate
     ? new Date(`${values.endsAtDate}T${values.endsAtTime || '23:59'}`)
@@ -127,26 +137,36 @@ function toApiValues(values: DiscountFormValues, selections: Selections): Discou
     // No internal note in the form: the code and its rules are the whole of
     // what a discount is here.
     description: null,
-    kind: 'PRODUCT',
+    kind,
     type: values.type,
     value: Number(values.value),
     maxDiscountAmount:
       values.type === 'PERCENT' && values.capEnabled ? Number(values.maxDiscountAmount) : null,
-    appliesTo: values.appliesTo,
-    productIds: values.appliesTo === 'PRODUCTS' ? selections.productIds : [],
-    categoryIds: values.appliesTo === 'CATEGORIES' ? selections.categoryIds : [],
-    collectionIds: values.appliesTo === 'COLLECTIONS' ? selections.collectionIds : [],
+    // An order discount applies to the cart: it has no targets, and sending
+    // any would be sending state from a form branch nobody filled in.
+    appliesTo: kind === 'PRODUCT' ? values.appliesTo : null,
+    productIds: kind === 'PRODUCT' && values.appliesTo === 'PRODUCTS' ? selections.productIds : [],
+    categoryIds:
+      kind === 'PRODUCT' && values.appliesTo === 'CATEGORIES' ? selections.categoryIds : [],
+    collectionIds:
+      kind === 'PRODUCT' && values.appliesTo === 'COLLECTIONS' ? selections.collectionIds : [],
     eligibility: values.eligibility,
     customerIds: values.eligibility === 'SPECIFIC_CUSTOMERS' ? selections.customerIds : [],
     minRequirement: values.minRequirement,
     minCartValue: values.minRequirement === 'PURCHASE_AMOUNT' ? Number(values.minCartValue) : null,
     minQuantity: values.minRequirement === 'ITEM_QUANTITY' ? Number(values.minQuantity) : null,
+    maxShippingAmount:
+      kind === 'SHIPPING' && values.excludeExpensiveShipping
+        ? Number(values.maxShippingAmount)
+        : null,
     usageLimit: values.limitTotal ? Number(values.usageLimit) : null,
     // The tick is a limit of one. Left off it is unlimited per person.
     perUserLimit: values.onePerCustomer ? 1 : null,
     combinesWithProduct: values.combinesWithProduct,
     combinesWithOrder: values.combinesWithOrder,
-    combinesWithShipping: values.combinesWithShipping,
+    // A shipping discount cannot sit beside another one whatever is ticked, so
+    // it never claims it can.
+    combinesWithShipping: kind === 'SHIPPING' ? false : values.combinesWithShipping,
     startsAt: startsAt.toISOString(),
     endsAt: endsAt ? endsAt.toISOString() : null,
   }
@@ -202,6 +222,7 @@ function useServerErrors() {
 // ─── the shared shell ────────────────────────────────────────────────────────
 
 function Editor({
+  kind,
   title,
   backLabel,
   submitLabel,
@@ -214,6 +235,7 @@ function Editor({
   onToggleState,
   onDuplicate,
 }: {
+  kind: DiscountKind
   title: string
   backLabel: string
   submitLabel: string
@@ -252,7 +274,7 @@ function Editor({
   const submit = form.handleSubmit(async (values) => {
     clear()
     try {
-      await onSubmit(toApiValues(values, selections))
+      await onSubmit(toApiValues(values, selections, kind))
     } catch (error) {
       apply(error, (field, message) =>
         form.setError(field as keyof DiscountFormValues, { message }),
@@ -341,6 +363,7 @@ function Editor({
         <FormProvider {...form}>
         <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_20rem]">
           <DiscountForm
+            kind={kind}
             selections={selections}
             onSelectionsChange={changeSelections}
             known={known}
@@ -348,7 +371,7 @@ function Editor({
           />
 
           <aside className="space-y-4">
-            <Summary selections={selections} discount={discount} />
+            <Summary kind={kind} selections={selections} discount={discount} />
           </aside>
         </div>
         </FormProvider>
@@ -383,7 +406,15 @@ function Editor({
 /** Indian grouping: ₹2,000, not ₹2000. The card is read at a glance. */
 const grouped = (value: string | number) => Number(value).toLocaleString('en-IN')
 
-function Summary({ selections, discount }: { selections: Selections; discount?: Discount }) {
+function Summary({
+  kind,
+  selections,
+  discount,
+}: {
+  kind: DiscountKind
+  selections: Selections
+  discount?: Discount
+}) {
   const { watch } = useFormContext<DiscountFormValues>()
   const values = watch()
 
@@ -420,9 +451,15 @@ function Summary({ selections, discount }: { selections: Selections; discount?: 
     ).padStart(2, '0')}`
 
   const details = [
-    chosen.count === 0
-      ? `No ${chosen.many} chosen yet`
-      : `${chosen.count} ${chosen.count === 1 ? chosen.one : chosen.many}`,
+    kind === 'ORDER'
+      ? 'The whole cart'
+      : kind === 'SHIPPING'
+        ? values.excludeExpensiveShipping && values.maxShippingAmount
+          ? `Delivery up to ₹${grouped(values.maxShippingAmount)}`
+          : 'Any delivery service'
+        : chosen.count === 0
+        ? `No ${chosen.many} chosen yet`
+        : `${chosen.count} ${chosen.count === 1 ? chosen.one : chosen.many}`,
     values.eligibility === 'ALL_CUSTOMERS'
       ? 'All customers'
       : selections.customerIds.length === 0
@@ -472,11 +509,21 @@ function Summary({ selections, discount }: { selections: Selections; discount?: 
       <div>
         <h3 className="text-sm font-semibold">Type</h3>
         <p className="mt-1 text-sm">
-          {amount ? `${amount}${cap}` : 'Amount off products'}
+          {amount
+            ? `${amount}${cap}`
+            : kind === 'ORDER'
+              ? 'Amount off order'
+              : kind === 'SHIPPING'
+                ? 'Amount off delivery'
+                : 'Amount off products'}
         </p>
         <p className="text-muted-foreground mt-0.5 flex items-center gap-1.5 text-xs">
           <Tag className="size-3.5" />
-          Product discount
+          {kind === 'ORDER'
+            ? 'Order discount'
+            : kind === 'SHIPPING'
+              ? 'Shipping discount'
+              : 'Product discount'}
         </p>
       </div>
 
@@ -498,6 +545,7 @@ function Summary({ selections, discount }: { selections: Selections; discount?: 
 // ─── new ─────────────────────────────────────────────────────────────────────
 
 type DuplicateState = {
+  kind: DiscountKind
   values: DiscountFormValues
   selections: Selections
   known: Pick<Discount, 'products' | 'categories' | 'collections' | 'customers'>
@@ -517,10 +565,29 @@ export function NewDiscountPage() {
    * Create is pressed.
    */
   const duplicated = (location.state as DuplicateState | null) ?? null
+  /**
+   * `?kind=ORDER` — chosen from the list's Create menu. Not a field on the form:
+   * it decides which questions the form asks, so it has to be settled before
+   * the form renders.
+   */
+  const kind: DiscountKind =
+    duplicated?.kind ??
+    (['ORDER', 'SHIPPING'].includes(new URLSearchParams(location.search).get('kind') ?? '')
+      ? (new URLSearchParams(location.search).get('kind') as DiscountKind)
+      : 'PRODUCT')
 
   return (
     <Editor
-      title={duplicated ? 'Duplicate discount' : 'Create discount'}
+      kind={kind}
+      title={
+        duplicated
+          ? 'Duplicate discount'
+          : kind === 'ORDER'
+            ? 'Create order discount'
+            : kind === 'SHIPPING'
+              ? 'Create shipping discount'
+              : 'Create product discount'
+      }
       backLabel="Back to discounts"
       submitLabel="Create discount"
       defaultValues={duplicated?.values ?? defaultsForNew()}
@@ -574,6 +641,7 @@ export default function DiscountEditorPage() {
   return (
     <Editor
       key={discount.id}
+      kind={discount.kind}
       title={discount.code}
       backLabel="Back to discounts"
       submitLabel="Save changes"
@@ -618,6 +686,7 @@ export default function DiscountEditorPage() {
               customerIds: discount.customers.map((row) => row.id),
             },
             known: discount,
+            kind: discount.kind,
           } satisfies DuplicateState,
         })
       }

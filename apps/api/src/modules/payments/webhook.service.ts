@@ -156,7 +156,11 @@ async function capturePayment(paymentId: string, event: ParsedWebhook): Promise<
         // shipping would not add up to what was charged.
         discountAmount: session.items
           .reduce((sum, item) => sum.plus(item.discountAmount), new Prisma.Decimal(0))
-          .plus(session.discountAmount),
+          .plus(session.discountAmount)
+          .plus(session.shippingDiscount),
+        // Broken out as well as counted above, so an order can say how much of
+        // its saving was delivery — the shipping line still shows the rate.
+        shippingDiscount: session.shippingDiscount,
         shippingAmount: session.shippingAmount,
         // The service, not just the charge. An order billed for next-day that
         // ships on the slow van is a refund, and the amount alone does not say

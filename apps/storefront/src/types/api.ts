@@ -381,6 +381,8 @@ export type ShippingMethodOption = {
 export type AppliedDiscount = {
   couponId: string
   code: string
+  /** Product discounts are shown against a line; order discounts get a row. */
+  kind: 'PRODUCT' | 'ORDER' | 'SHIPPING'
   amount: string
 }
 
@@ -399,6 +401,8 @@ export type CheckoutSession = {
   /** The lines after their discounts — what the summary calls Subtotal. */
   goodsTotal: string
   shippingAmount: string
+  /** Taken off the delivery charge; the rate above is what was quoted. */
+  shippingDiscount: string
   /** The chosen service's code, and every service priced for this order. */
   shippingMethod: string
   shippingMethods: ShippingMethodOption[]

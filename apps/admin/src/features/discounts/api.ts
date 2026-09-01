@@ -33,6 +33,7 @@ export type DiscountValues = {
   minRequirement: DiscountMinRequirement
   minCartValue?: number | null
   minQuantity?: number | null
+  maxShippingAmount?: number | null
   usageLimit?: number | null
   perUserLimit?: number | null
   combinesWithProduct: boolean

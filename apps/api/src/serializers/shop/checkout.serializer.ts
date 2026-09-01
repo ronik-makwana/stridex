@@ -26,7 +26,7 @@ export type CheckoutSessionRecord = Prisma.CheckoutSessionGetPayload<{
     }
     shippingAddress: true
     billingAddress: true
-    redemptions: { include: { coupon: { select: { id: true; code: true } } } }
+    redemptions: { include: { coupon: { select: { id: true; code: true; kind: true } } } }
     order: { select: { id: true; orderNumber: true } }
   }
 }>
@@ -81,9 +81,13 @@ export function serializeCheckoutSession(
   session: CheckoutSessionRecord,
   shippingMethods: ShippingMethodOption[] = [],
 ) {
-  const totalDiscount = session.items
-    .reduce((sum, item) => sum.plus(item.discountAmount), new Prisma.Decimal(0))
+  const itemDiscount = session.items.reduce(
+    (sum, item) => sum.plus(item.discountAmount),
+    new Prisma.Decimal(0),
+  )
+  const totalDiscount = itemDiscount
     .plus(session.discountAmount)
+    .plus(session.shippingDiscount)
 
   return {
     id: session.id,
@@ -106,19 +110,29 @@ export function serializeCheckoutSession(
       .map((row) => ({
         couponId: row.couponId,
         code: row.coupon.code,
+        /**
+         * Which kind, because the two are shown in different places: a product
+         * discount is named against the line it came off, an order discount has
+         * no line to sit on and needs a row of its own in the totals.
+         */
+        kind: row.coupon.kind,
         amount: money(row.discountAmount),
       })),
     /** Every saving on the order: the lines' own, plus any order-wide one. */
     totalDiscount: money(totalDiscount),
     /**
-     * The lines as they will actually be charged — gross less every discount.
+     * The lines as the item column adds up: gross less each line's own
+     * discount, and *not* less the order-wide one.
      *
-     * This is what the summary calls Subtotal, and it is computed here rather
-     * than by subtracting two strings in the client, for the same reason every
-     * other figure is (§21).
+     * That is what the summary calls Subtotal, and it is deliberately not the
+     * final figure: an order discount has no line to be shown against, so it
+     * gets its own row underneath. A subtotal that had quietly absorbed it
+     * would be a saving the customer cannot see anywhere.
      */
-    goodsTotal: money(session.subtotal.minus(totalDiscount)),
+    goodsTotal: money(session.subtotal.minus(itemDiscount)),
     shippingAmount: money(session.shippingAmount),
+    /** Taken off the delivery charge. The rate above stays what was quoted. */
+    shippingDiscount: money(session.shippingDiscount),
     /** The chosen service, and what every service would have cost. */
     shippingMethod: session.shippingMethod,
     shippingMethods: shippingMethods.map((method) => ({

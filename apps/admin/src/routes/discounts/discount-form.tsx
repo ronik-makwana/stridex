@@ -2,7 +2,7 @@ import * as React from 'react'
 import { useFormContext } from 'react-hook-form'
 import { RefreshCw } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import type { Discount, DiscountRef } from '@/types/api'
+import type { Discount, DiscountKind, DiscountRef } from '@/types/api'
 import type { DiscountFormValues } from '@/features/discounts/schemas'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
@@ -68,11 +68,18 @@ function Card({
 }
 
 export function DiscountForm({
+  kind,
   selections,
   onSelectionsChange,
   known,
   selectionErrors,
 }: {
+  /**
+   * Fixed for the life of the discount. Changing what a code applies to after
+   * it has been handed out is a different offer wearing the same name, so the
+   * kind is chosen once, when it is created.
+   */
+  kind: DiscountKind
   selections: Selections
   onSelectionsChange: (next: Selections) => void
   /** Names loaded with the discount, so chips render before any list arrives. */
@@ -99,7 +106,15 @@ export function DiscountForm({
   return (
     <div className="space-y-4">
       {/* ── the code ────────────────────────────────────────────────────── */}
-      <Card title="Amount off products">
+      <Card
+        title={
+          kind === 'ORDER'
+            ? 'Amount off order'
+            : kind === 'SHIPPING'
+              ? 'Amount off delivery'
+              : 'Amount off products'
+        }
+      >
         <div className="space-y-2">
           <div className="flex items-baseline justify-between gap-3">
             <Label htmlFor="code">Discount code</Label>
@@ -210,6 +225,12 @@ export function DiscountForm({
           </div>
         )}
 
+        {/*
+          Nothing to choose on an order discount: it applies to the cart, which
+          is the whole of what makes it a different kind.
+        */}
+        {kind === 'PRODUCT' && (
+        <>
         <div className="space-y-2 border-t pt-4">
           <Label htmlFor="appliesTo">Applies to</Label>
           <Select
@@ -255,7 +276,49 @@ export function DiscountForm({
             error={selectionErrors.collectionIds}
           />
         )}
+        </>
+        )}
       </Card>
+
+      {/*
+        Shipping rates. Only a shipping discount has anything to say here: the
+        rate is the thing it takes money off, so "not on the expensive ones" is
+        the one qualification that belongs to this kind alone.
+      */}
+      {kind === 'SHIPPING' && (
+        <Card title="Shipping rates">
+          <label className="flex items-center gap-2 text-sm">
+            <Checkbox
+              checked={watch('excludeExpensiveShipping')}
+              onCheckedChange={(checked) =>
+                setValue('excludeExpensiveShipping', checked === true, { shouldDirty: true })
+              }
+            />
+            Exclude shipping rates over a certain amount
+          </label>
+
+          {watch('excludeExpensiveShipping') && (
+            <div className="max-w-xs">
+              <Input
+                inputMode="decimal"
+                placeholder="200"
+                aria-invalid={Boolean(errors.maxShippingAmount)}
+                {...register('maxShippingAmount')}
+              />
+              {errors.maxShippingAmount ? (
+                <p className="text-destructive mt-1 text-sm">
+                  {errors.maxShippingAmount.message}
+                </p>
+              ) : (
+                <p className="text-muted-foreground mt-1 text-xs">
+                  A customer who picks a faster, dearer service is told the code does not cover
+                  it — rather than the code quietly doing nothing.
+                </p>
+              )}
+            </div>
+          )}
+        </Card>
+      )}
 
       {/* ── who ─────────────────────────────────────────────────────────── */}
       <Card title="Eligibility">
@@ -291,7 +354,11 @@ export function DiscountForm({
       {/* ── the gate ────────────────────────────────────────────────────── */}
       <Card
         title="Minimum purchase requirements"
-        description="Measured against the products this discount applies to, not the whole cart."
+        description={
+          kind === 'PRODUCT'
+            ? 'Measured against the products this discount applies to, not the whole cart.'
+            : 'Measured against the whole cart.'
+        }
       >
         <RadioGroup
           value={minRequirement}
@@ -404,15 +471,19 @@ export function DiscountForm({
             />
             Order discounts
           </label>
-          <label className="flex items-center gap-2 text-sm">
-            <Checkbox
-              checked={watch('combinesWithShipping')}
-              onCheckedChange={(checked) =>
-                setValue('combinesWithShipping', checked === true, { shouldDirty: true })
-              }
-            />
-            Shipping discounts
-          </label>
+          {/* Never offered on a shipping discount: there is one delivery
+              charge, so two of them are two offers on one thing. */}
+          {kind !== 'SHIPPING' && (
+            <label className="flex items-center gap-2 text-sm">
+              <Checkbox
+                checked={watch('combinesWithShipping')}
+                onCheckedChange={(checked) =>
+                  setValue('combinesWithShipping', checked === true, { shouldDirty: true })
+                }
+              />
+              Shipping discounts
+            </label>
+          )}
         </div>
       </Card>
 

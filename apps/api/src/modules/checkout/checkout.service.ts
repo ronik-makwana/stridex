@@ -11,7 +11,13 @@ import {
   type CheckoutSessionRecord,
   type ShopCheckoutPayload,
 } from '../../serializers/shop/checkout.serializer.js'
-import { allocate, couponInclude, evaluate, sessionLines } from './discount.engine.js'
+import {
+  allocate,
+  couponInclude,
+  evaluate,
+  evaluateShipping,
+  sessionLines,
+} from './discount.engine.js'
 import {
   quoteMethods,
   rateFor,
@@ -66,7 +72,7 @@ const sessionInclude = {
   // The applied codes travel with the quote: the summary has to name them, and
   // a second read to fetch them is a window where the total and the codes
   // disagree.
-  redemptions: { include: { coupon: { select: { id: true, code: true } } } },
+  redemptions: { include: { coupon: { select: { id: true, code: true, kind: true } } } },
   // Present only once the webhook has landed. It is what a second tab needs in
   // order to redirect to the confirmation instead of trying to pay again (§25).
   order: { select: { id: true, orderNumber: true } },
@@ -374,53 +380,186 @@ async function applyDiscounts(tx: Prisma.TransactionClient, sessionId: string): 
   // quote's discount just because nothing overwrote it.
   await tx.checkoutItem.updateMany({
     where: { checkoutSessionId: sessionId },
-    data: { discountAmount: 0, discountCode: null },
+    data: { discountAmount: 0, discountCode: null, orderDiscountAllocated: 0 },
   })
+  await tx.checkoutSession.update({ where: { id: sessionId }, data: { discountAmount: 0 } })
 
   if (held.length === 0) return
 
   const lines = await sessionLines(tx, sessionId)
-  const candidates: { couponId: string; perLine: Map<string, Prisma.Decimal> }[] = []
+  const release = async (redemptionId: string) => {
+    await tx.couponRedemption.update({
+      where: { id: redemptionId },
+      data: { status: 'RELEASED', discountAmount: 0 },
+    })
+  }
 
-  for (const redemption of held) {
+  // ── product discounts, against the lines ───────────────────────────────────
+  const productCandidates: { couponId: string; perLine: Map<string, Prisma.Decimal> }[] = []
+
+  for (const redemption of held.filter((row) => row.coupon.kind === 'PRODUCT')) {
     const result = await evaluate(tx, redemption.coupon, {
       userId: session.userId,
       sessionId,
       lines,
     })
-    if (result.ok) {
-      candidates.push({ couponId: redemption.couponId, perLine: result.perLine })
-    } else {
-      await tx.couponRedemption.update({
-        where: { id: redemption.id },
-        data: { status: 'RELEASED', discountAmount: 0 },
+    if (result.ok) productCandidates.push({ couponId: redemption.couponId, perLine: result.perLine })
+    else await release(redemption.id)
+  }
+
+  const won = allocate(productCandidates)
+  const codeOf = new Map(held.map((row) => [row.couponId, row.coupon.code]))
+
+  for (const [lineId, line] of won.perLine) {
+    await tx.checkoutItem.update({
+      where: { id: lineId },
+      data: { discountAmount: line.amount, discountCode: codeOf.get(line.couponId) ?? null },
+    })
+  }
+
+  /**
+   * What each line still costs. Order discounts are worked out on this, so a
+   * cart that already has 20% off one pair does not then get 10% of that 20%
+   * back as well.
+   */
+  const netByLine = new Map<string, Prisma.Decimal>(
+    lines.map((line) => [
+      line.id,
+      line.totalPrice.minus(won.perLine.get(line.id)?.amount ?? new Prisma.Decimal(0)),
+    ]),
+  )
+
+  // ── order discounts, against the cart ─────────────────────────────────────
+  /**
+   * At most one, and the biggest wins — the same rule as a line, for the same
+   * reason: the cart is the single thing an order discount applies to, so two
+   * of them are two offers on one thing rather than two offers on different
+   * things.
+   */
+  let best: { redemptionId: string; couponId: string; total: Prisma.Decimal; perLine: Map<string, Prisma.Decimal> } | null =
+    null
+  const orderHolds = held.filter((row) => row.coupon.kind === 'ORDER')
+
+  for (const redemption of orderHolds) {
+    const result = await evaluate(tx, redemption.coupon, {
+      userId: session.userId,
+      sessionId,
+      lines,
+      netByLine,
+    })
+    if (!result.ok) {
+      await release(redemption.id)
+      continue
+    }
+    if (!best || result.total.greaterThan(best.total)) {
+      best = {
+        redemptionId: redemption.id,
+        couponId: redemption.couponId,
+        total: result.total,
+        perLine: result.perLine,
+      }
+    }
+  }
+
+  if (best) {
+    await tx.checkoutSession.update({
+      where: { id: sessionId },
+      data: { discountAmount: best.total },
+    })
+    /**
+     * Spread across the lines as well as stored on the session. The order needs
+     * it per line so that refunding one item can say what that item actually
+     * cost after everything — `order_items.order_discount_allocated` is where
+     * that lives (§19).
+     */
+    for (const [lineId, share] of best.perLine) {
+      await tx.checkoutItem.update({
+        where: { id: lineId },
+        data: { orderDiscountAllocated: share },
       })
     }
   }
 
-  if (candidates.length === 0) return
-
-  const { perLine, perCoupon } = allocate(candidates)
-
-  // The winning code is written onto the line as text, so the summary can name
-  // it — "SAVE20 (−₹240)" against the item it actually came off, rather than a
-  // lump at the bottom the customer has to attribute themselves.
-  const codeOf = new Map(held.map((row) => [row.couponId, row.coupon.code]))
-  for (const [lineId, won] of perLine) {
-    await tx.checkoutItem.update({
-      where: { id: lineId },
-      data: { discountAmount: won.amount, discountCode: codeOf.get(won.couponId) ?? null },
-    })
-  }
-
-  for (const redemption of held) {
-    const amount = perCoupon.get(redemption.couponId)
+  // ── what each code ended up being worth ───────────────────────────────────
+  // Shipping codes are settled later, against the rate, so they are skipped.
+  for (const redemption of held.filter((row) => row.coupon.kind !== 'SHIPPING')) {
+    const amount =
+      redemption.coupon.kind === 'ORDER'
+        ? best?.couponId === redemption.couponId
+          ? best.total
+          : new Prisma.Decimal(0)
+        : won.perCoupon.get(redemption.couponId)
     if (amount === undefined) continue
     await tx.couponRedemption.update({
       where: { id: redemption.id },
       data: { discountAmount: amount },
     })
   }
+}
+
+/**
+ * Shipping discounts, once the delivery charge is known.
+ *
+ * This cannot run with the others: what a shipping discount is worth — and
+ * whether it applies at all, given the "not on rates over ₹X" exclusion —
+ * depends on the rate, and the rate depends on the goods total the other
+ * discounts produce. So the order is goods, then rate, then this.
+ *
+ * At most one applies. Two shipping discounts on one delivery charge are two
+ * offers on one thing, so the biggest wins, exactly as for an order discount.
+ */
+async function applyShippingDiscounts(
+  tx: Prisma.TransactionClient,
+  sessionId: string,
+  shipping: Prisma.Decimal,
+): Promise<Prisma.Decimal> {
+  const session = await tx.checkoutSession.findUniqueOrThrow({
+    where: { id: sessionId },
+    select: { userId: true },
+  })
+
+  const held = await tx.couponRedemption.findMany({
+    where: { checkoutSessionId: sessionId, status: 'ACTIVE', coupon: { kind: 'SHIPPING' } },
+    include: { coupon: { include: couponInclude } },
+    orderBy: { createdAt: 'asc' },
+  })
+  if (held.length === 0) return new Prisma.Decimal(0)
+
+  const lines = await sessionLines(tx, sessionId)
+  let best: { redemptionId: string; total: Prisma.Decimal } | null = null
+
+  for (const redemption of held) {
+    const result = await evaluateShipping(tx, redemption.coupon, {
+      userId: session.userId,
+      sessionId,
+      lines,
+      shippingAmount: shipping,
+    })
+    if (!result.ok) {
+      // Released rather than left worth nothing: a customer who changes to a
+      // delivery speed the code excludes has to see the code go, not watch the
+      // total rise with the code still sitting there (§16).
+      await tx.couponRedemption.update({
+        where: { id: redemption.id },
+        data: { status: 'RELEASED', discountAmount: 0 },
+      })
+      continue
+    }
+    if (!best || result.total.greaterThan(best.total)) {
+      best = { redemptionId: redemption.id, total: result.total }
+    }
+  }
+
+  for (const redemption of held) {
+    await tx.couponRedemption.updateMany({
+      where: { id: redemption.id, status: 'ACTIVE' },
+      data: {
+        discountAmount: best?.redemptionId === redemption.id ? best.total : 0,
+      },
+    })
+  }
+
+  return best?.total ?? new Prisma.Decimal(0)
 }
 
 /**
@@ -437,7 +576,8 @@ async function applyDiscounts(tx: Prisma.TransactionClient, sessionId: string): 
  *   item_discount  = Σ per-line discounts        ← coupons, in the discount phase
  *   order_discount = cart-wide, capped at (subtotal − item_discount)
  *   shipping       = the chosen method's rate, waived above the threshold
- *   total          = subtotal − discounts + shipping
+ *   ship_discount  = a shipping code against that rate
+ *   total          = subtotal − discounts + shipping − ship_discount
  *
  * The two discount steps are zero today by decision, not by oversight: coupons
  * come after the checkout flow works end to end. They land here, in this
@@ -478,6 +618,8 @@ async function quoteSession(tx: Prisma.TransactionClient, sessionId: string) {
 
   const goodsTotal = ceiling.minus(orderDiscount)
   const shipping = await quoteShipping(tx, goodsTotal, session.shippingMethod)
+  // Last, because it needs the rate above — see applyShippingDiscounts.
+  const shippingDiscount = await applyShippingDiscounts(tx, sessionId, shipping)
 
   return tx.checkoutSession.update({
     where: { id: sessionId },
@@ -485,7 +627,8 @@ async function quoteSession(tx: Prisma.TransactionClient, sessionId: string) {
       subtotal,
       discountAmount: orderDiscount,
       shippingAmount: shipping,
-      totalAmount: goodsTotal.plus(shipping),
+      shippingDiscount,
+      totalAmount: goodsTotal.plus(shipping).minus(shippingDiscount),
     },
   })
 }
@@ -930,7 +1073,18 @@ export async function applyCoupon(
 
     const held = await tx.couponRedemption.findMany({
       where: { checkoutSessionId: id, status: 'ACTIVE' },
-      include: { coupon: { select: { id: true, code: true, kind: true, combinesWithProduct: true } } },
+      include: {
+        coupon: {
+          select: {
+            id: true,
+            code: true,
+            kind: true,
+            combinesWithProduct: true,
+            combinesWithOrder: true,
+            combinesWithShipping: true,
+          },
+        },
+      },
     })
 
     if (held.some((row) => row.couponId === coupon.id)) {
@@ -938,14 +1092,45 @@ export async function applyCoupon(
     }
 
     /**
-     * The combinations tick, enforced. A code that says it does not combine
-     * with product discounts cannot sit beside one — in either direction, since
-     * "does not combine" is a property of the offer, not of who arrived first.
+     * The combinations ticks on **the code being applied**, against the kinds
+     * already on the checkout.
+     *
+     * Only this code's settings are read, and they are read now: an operator
+     * who has just changed a discount in the admin expects the next attempt to
+     * use what they changed, not what the other codes were set to when they
+     * were applied. The trade is that the outcome depends on the order the
+     * codes were typed in — A then B asks B, B then A asks A — which is the
+     * price of "the latest settings win".
      */
-    const blocker = held.find(
-      (row) => !row.coupon.combinesWithProduct || !coupon.combinesWithProduct,
-    )
-    if (blocker && coupon.kind === 'PRODUCT') {
+    const accepts = (
+      offer: { combinesWithProduct: boolean; combinesWithOrder: boolean; combinesWithShipping: boolean },
+      kind: 'PRODUCT' | 'ORDER' | 'SHIPPING',
+    ) =>
+      kind === 'PRODUCT'
+        ? offer.combinesWithProduct
+        : kind === 'ORDER'
+          ? offer.combinesWithOrder
+          : offer.combinesWithShipping
+
+    /**
+     * A shipping discount never sits beside another one, whatever the ticks
+     * say: there is one delivery charge, so a second offer against it is a
+     * second answer to the same question. Product and order discounts are a
+     * different matter — they take money off different things.
+     */
+    const sameShipping =
+      coupon.kind === 'SHIPPING' ? held.find((row) => row.coupon.kind === 'SHIPPING') : undefined
+    if (sameShipping) {
+      throw new AppError(
+        409,
+        'COUPON_NOT_COMBINABLE',
+        `${code} couldn't be used with your existing discounts.`,
+        { reason: `Only one delivery discount at a time — remove ${sameShipping.coupon.code}.` },
+      )
+    }
+
+    const blocker = held.find((row) => !accepts(coupon, row.coupon.kind))
+    if (blocker) {
       /**
        * The rejected code is named, not "those codes": the customer typed this
        * one and is looking at the others in a list beside the box, so the
@@ -960,7 +1145,29 @@ export async function applyCoupon(
     }
 
     const lines = await sessionLines(tx, id)
-    const result = await evaluate(tx, coupon, { userId, sessionId: id, lines })
+
+    /**
+     * Checked before it is stored, so a code that cannot apply is a message
+     * rather than a chip worth nothing. A shipping code is checked against the
+     * rate this session last quoted — the customer can change delivery speed
+     * afterwards, and the re-quote will drop the code if that makes it
+     * ineligible.
+     */
+    const result =
+      coupon.kind === 'SHIPPING'
+        ? await evaluateShipping(tx, coupon, {
+            userId,
+            sessionId: id,
+            lines,
+            shippingAmount: (
+              await tx.checkoutSession.findUniqueOrThrow({
+                where: { id },
+                select: { shippingAmount: true },
+              })
+            ).shippingAmount,
+          })
+        : await evaluate(tx, coupon, { userId, sessionId: id, lines })
+
     if (!result.ok) {
       throw new AppError(422, result.refusal.code, result.refusal.message, {
         reason: result.refusal.reason,

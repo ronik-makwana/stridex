@@ -769,6 +769,8 @@ export type Discount = {
   minRequirement: DiscountMinRequirement
   minCartValue: string | null
   minQuantity: number | null
+  /** Shipping discounts: the rate above which this does not apply. */
+  maxShippingAmount: string | null
 
   usageLimit: number | null
   perUserLimit: number | null
@@ -799,6 +801,9 @@ export type DiscountRow = {
   customerCount: number
   usageLimit: number | null
   usedCount: number
+  combinesWithProduct: boolean
+  combinesWithOrder: boolean
+  combinesWithShipping: boolean
   startsAt: string
   endsAt: string | null
   state: DiscountState

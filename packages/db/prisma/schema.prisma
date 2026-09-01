@@ -728,26 +728,30 @@ model Review {
 // ─────────────────────────────── orders ───────────────────────────────
 
 model Order {
-  id             String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  userId         String?       @map("user_id") @db.Uuid
-  orderNumber    String        @unique @map("order_number")
-  status         OrderStatus   @default(PENDING)
-  paymentStatus  PaymentStatus @default(PENDING) @map("payment_status")
-  subtotal       Decimal       @db.Decimal(12, 2)
-  discountAmount Decimal       @default(0) @map("discount_amount") @db.Decimal(12, 2)
-  shippingAmount Decimal       @default(0) @map("shipping_amount") @db.Decimal(12, 2)
+  id               String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId           String?       @map("user_id") @db.Uuid
+  orderNumber      String        @unique @map("order_number")
+  status           OrderStatus   @default(PENDING)
+  paymentStatus    PaymentStatus @default(PENDING) @map("payment_status")
+  subtotal         Decimal       @db.Decimal(12, 2)
+  discountAmount   Decimal       @default(0) @map("discount_amount") @db.Decimal(12, 2)
+  shippingAmount   Decimal       @default(0) @map("shipping_amount") @db.Decimal(12, 2)
+  /**
+   * The part of `discountAmount` that came off delivery rather than goods.
+   */
+  shippingDiscount Decimal       @default(0) @map("shipping_discount") @db.Decimal(12, 2)
   /**
    * The delivery service the customer paid for, copied from the session. The
    * warehouse reads this: an order charged for next-day that ships on the slow
    * van is a refund, and the amount alone does not say which was bought.
    */
-  shippingMethod String        @default("STANDARD") @map("shipping_method")
-  taxAmount      Decimal       @default(0) @map("tax_amount") @db.Decimal(12, 2)
-  totalAmount    Decimal       @map("total_amount") @db.Decimal(12, 2)
-  currency       String        @default("INR")
-  placedAt       DateTime?     @map("placed_at") @db.Timestamptz(6)
-  createdAt      DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt      DateTime      @updatedAt @map("updated_at") @db.Timestamptz(6)
+  shippingMethod   String        @default("STANDARD") @map("shipping_method")
+  taxAmount        Decimal       @default(0) @map("tax_amount") @db.Decimal(12, 2)
+  totalAmount      Decimal       @map("total_amount") @db.Decimal(12, 2)
+  currency         String        @default("INR")
+  placedAt         DateTime?     @map("placed_at") @db.Timestamptz(6)
+  createdAt        DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime      @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
 
@@ -782,6 +786,8 @@ model OrderItem {
    * `unit_price`; subtracting it here as well discounts the product twice.
    */
   /**
+   * /**
+   * /**
    * /** Snapshot, like every other field here: the code as it was at purchase.
    */
   discountCode           String?  @map("discount_code")
@@ -853,24 +859,30 @@ model OrderStatusHistory {
  * survives from the admin build, is written 0, and is never rendered.
  */
 model CheckoutSession {
-  id             String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  userId         String         @map("user_id") @db.Uuid
-  status         CheckoutStatus @default(ACTIVE)
-  expiresAt      DateTime       @map("expires_at") @db.Timestamptz(6)
-  subtotal       Decimal        @db.Decimal(12, 2)
+  id               String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId           String         @map("user_id") @db.Uuid
+  status           CheckoutStatus @default(ACTIVE)
+  expiresAt        DateTime       @map("expires_at") @db.Timestamptz(6)
+  subtotal         Decimal        @db.Decimal(12, 2)
   /**
    * The order-wide discount. Per-line discounts live on `checkout_items`.
    */
-  discountAmount Decimal        @default(0) @map("discount_amount") @db.Decimal(12, 2)
-  shippingAmount Decimal        @default(0) @map("shipping_amount") @db.Decimal(12, 2)
+  discountAmount   Decimal        @default(0) @map("discount_amount") @db.Decimal(12, 2)
+  shippingAmount   Decimal        @default(0) @map("shipping_amount") @db.Decimal(12, 2)
+  /**
+   * Taken off the delivery charge by a shipping discount. Kept apart from the
+   * rate so the summary can show both — a charge that silently arrives lower is
+   * one the customer cannot check.
+   */
+  shippingDiscount Decimal        @default(0) @map("shipping_discount") @db.Decimal(12, 2)
   /**
    * Which delivery service was chosen, as a code from the static table in
    * `shipping.methods.ts`. The rate is quoted from this and the settings row,
    * never sent by the client (§21).
    */
-  shippingMethod String         @default("STANDARD") @map("shipping_method")
-  totalAmount    Decimal        @map("total_amount") @db.Decimal(12, 2)
-  currency       String         @default("INR")
+  shippingMethod   String         @default("STANDARD") @map("shipping_method")
+  totalAmount      Decimal        @map("total_amount") @db.Decimal(12, 2)
+  currency         String         @default("INR")
 
   shippingAddressId String? @map("shipping_address_id") @db.Uuid
   billingAddressId  String? @map("billing_address_id") @db.Uuid
@@ -922,6 +934,8 @@ model CheckoutItem {
    * This line's own discount. See `order_items.discount_amount`.
    */
   /**
+   * /**
+   * /**
    * /**
    * The code that won this line, as text. At most one: several codes can sit on
    * a cart, but a line takes the best of them and never two (see the allocator
@@ -1024,13 +1038,18 @@ model Coupon {
    * PRODUCT discounts only. Null on an order or shipping discount, which apply
    * to the cart rather than to anything in it.
    */
-  appliesTo      DiscountAppliesTo?     @map("applies_to")
-  eligibility    DiscountEligibility    @default(ALL_CUSTOMERS)
-  minRequirement DiscountMinRequirement @default(NONE) @map("min_requirement")
+  appliesTo         DiscountAppliesTo?     @map("applies_to")
+  eligibility       DiscountEligibility    @default(ALL_CUSTOMERS)
+  minRequirement    DiscountMinRequirement @default(NONE) @map("min_requirement")
   /**
    * Read when `minRequirement` is ITEM_QUANTITY; `minCartValue` when it is PURCHASE_AMOUNT.
    */
-  minQuantity    Int?                   @map("min_quantity")
+  minQuantity       Int?                   @map("min_quantity")
+  /**
+   * SHIPPING discounts only: the rate above which this does not apply. "Free
+   * delivery, but not on next-day." Null means every rate qualifies.
+   */
+  maxShippingAmount Decimal?               @map("max_shipping_amount") @db.Decimal(12, 2)
 
   /**
    * Which *other* kinds this one may sit alongside in the same checkout. Three

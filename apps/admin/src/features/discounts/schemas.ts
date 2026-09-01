@@ -36,6 +36,9 @@ export const discountFormSchema = z
     minCartValue: z.string(),
     minQuantity: z.string(),
 
+    excludeExpensiveShipping: z.boolean(),
+    maxShippingAmount: z.string(),
+
     limitTotal: z.boolean(),
     usageLimit: z.string(),
     onePerCustomer: z.boolean(),
@@ -66,6 +69,14 @@ export const discountFormSchema = z
     }
     if (values.minRequirement === 'ITEM_QUANTITY' && !positive(values.minQuantity)) {
       ctx.addIssue({ code: 'custom', path: ['minQuantity'], message: 'Enter a minimum quantity' })
+    }
+
+    if (values.excludeExpensiveShipping && !positive(values.maxShippingAmount)) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['maxShippingAmount'],
+        message: 'Enter the rate to exclude above',
+      })
     }
 
     if (values.limitTotal && !positive(values.usageLimit)) {

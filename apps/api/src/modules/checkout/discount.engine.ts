@@ -170,41 +170,29 @@ async function coveredLineIds(
 }
 
 /**
- * The whole of §20, in the order a customer would ask it: does this code exist,
- * is it running, is it for me, does my basket qualify, and is there any of it
- * left.
- *
- * `usage` is counted from `coupon_redemptions` rather than from `used_count`,
- * because a code held by three checkouts that have not paid yet is three fewer
- * available — counting only completed orders is how a limited code oversells.
+ * The checks every kind of discount shares: is it running, is it for me, and is
+ * there any of it left. Split out so a shipping discount — which has no lines
+ * to match against — asks exactly the same questions in the same order.
  */
-export async function evaluate(
+async function checkGates(
   tx: Prisma.TransactionClient,
   coupon: CouponRecord,
-  input: { userId: string; lines: Line[]; sessionId: string; now?: Date },
-): Promise<DiscountResult> {
+  input: { userId: string; sessionId: string; now?: Date },
+): Promise<DiscountRefusal | null> {
   const now = input.now ?? new Date()
 
   if (coupon.startsAt && coupon.startsAt > now) {
-    return {
-      ok: false,
-      refusal: { code: 'COUPON_NOT_STARTED', message: 'That code is not active yet' },
-    }
+    return { code: 'COUPON_NOT_STARTED', message: 'That code is not active yet' }
   }
   if (coupon.endsAt && coupon.endsAt <= now) {
-    return { ok: false, refusal: { code: 'COUPON_EXPIRED', message: 'That code has expired' } }
+    return { code: 'COUPON_EXPIRED', message: 'That code has expired' }
   }
 
   if (coupon.eligibility === 'SPECIFIC_CUSTOMERS') {
     const allowed = coupon.customers.some((row) => row.userId === input.userId)
     // Deliberately the same wording as an unknown code: telling a stranger that
     // a code is real but not for them is telling them it is worth hunting for.
-    if (!allowed) {
-      return {
-        ok: false,
-        refusal: { code: 'COUPON_NOT_FOUND', message: "That code isn't valid" },
-      }
-    }
+    if (!allowed) return { code: 'COUPON_NOT_FOUND', message: "That code isn't valid" }
   }
 
   if (coupon.usageLimit !== null) {
@@ -216,10 +204,7 @@ export async function evaluate(
       },
     })
     if (used >= coupon.usageLimit) {
-      return {
-        ok: false,
-        refusal: { code: 'COUPON_EXHAUSTED', message: 'That code has been fully used' },
-      }
+      return { code: 'COUPON_EXHAUSTED', message: 'That code has been fully used' }
     }
   }
 
@@ -234,20 +219,54 @@ export async function evaluate(
     })
     if (mine >= coupon.perUserLimit) {
       return {
-        ok: false,
-        refusal: {
-          code: 'COUPON_ALREADY_USED',
-          message: 'You have already used that code',
-          reason:
-            coupon.perUserLimit === 1
-              ? 'It can be used once per customer.'
-              : `It can be used ${coupon.perUserLimit} times per customer.`,
-        },
+        code: 'COUPON_ALREADY_USED',
+        message: 'You have already used that code',
+        reason:
+          coupon.perUserLimit === 1
+            ? 'It can be used once per customer.'
+            : `It can be used ${coupon.perUserLimit} times per customer.`,
       }
     }
   }
 
-  const covered = await coveredLineIds(tx, coupon, input.lines)
+  return null
+}
+
+/**
+ * The whole of §20, in the order a customer would ask it: does this code exist,
+ * is it running, is it for me, does my basket qualify, and is there any of it
+ * left.
+ *
+ * `usage` is counted from `coupon_redemptions` rather than from `used_count`,
+ * because a code held by three checkouts that have not paid yet is three fewer
+ * available — counting only completed orders is how a limited code oversells.
+ */
+export async function evaluate(
+  tx: Prisma.TransactionClient,
+  coupon: CouponRecord,
+  input: {
+    userId: string
+    lines: Line[]
+    sessionId: string
+    /**
+     * What each line still costs after the product discounts already applied.
+     * Order discounts are worked out on this, so the same rupee is never
+     * discounted twice; product discounts ignore it and work on the gross.
+     */
+    netByLine?: Map<string, Prisma.Decimal>
+    now?: Date
+  },
+): Promise<DiscountResult> {
+  const gate = await checkGates(tx, coupon, input)
+  if (gate) return { ok: false, refusal: gate }
+  /**
+   * An order discount is against the cart, so every line is eligible and there
+   * is nothing to match: that is the whole difference between the two kinds.
+   */
+  const covered =
+    coupon.kind === 'ORDER'
+      ? new Set(input.lines.map((line) => line.id))
+      : await coveredLineIds(tx, coupon, input.lines)
   const eligible = input.lines.filter((line) => covered.has(line.id))
 
   if (eligible.length === 0) {
@@ -261,7 +280,24 @@ export async function evaluate(
     }
   }
 
+  /**
+   * Two figures, and the difference is deliberate.
+   *
+   * `eligibleTotal` is the gross — what the customer sees in their bag — and it
+   * is what a minimum is measured against. "Spend ₹2,000" is a question about
+   * what they are buying, and a customer who is told they qualify, applies a
+   * second code, and is then told they no longer do has been shown a moving
+   * target.
+   *
+   * `chargeableTotal` is what is still owed on those lines, and it is what the
+   * discount is *worth a percentage of*. Anything else discounts money that has
+   * already been discounted.
+   */
   const eligibleTotal = eligible.reduce((sum, line) => sum.plus(line.totalPrice), ZERO)
+  const chargeableTotal = eligible.reduce(
+    (sum, line) => sum.plus(input.netByLine?.get(line.id) ?? line.totalPrice),
+    ZERO,
+  )
   const eligibleQuantity = eligible.reduce((sum, line) => sum + line.quantity, 0)
 
   if (coupon.minRequirement === 'PURCHASE_AMOUNT' && coupon.minCartValue) {
@@ -270,8 +306,14 @@ export async function evaluate(
         ok: false,
         refusal: {
           code: 'COUPON_MINIMUM_NOT_MET',
-          message: `Spend ₹${coupon.minCartValue.toFixed(0)} on eligible items to use that code`,
-          reason: `Your eligible items come to ₹${eligibleTotal.toFixed(0)}.`,
+          message:
+            coupon.kind === 'ORDER'
+              ? `Spend ₹${coupon.minCartValue.toFixed(0)} to use that code`
+              : `Spend ₹${coupon.minCartValue.toFixed(0)} on eligible items to use that code`,
+          reason:
+            coupon.kind === 'ORDER'
+              ? `Your bag comes to ₹${eligibleTotal.toFixed(0)}.`
+              : `Your eligible items come to ₹${eligibleTotal.toFixed(0)}.`,
         },
       }
     }
@@ -283,7 +325,10 @@ export async function evaluate(
         ok: false,
         refusal: {
           code: 'COUPON_MINIMUM_NOT_MET',
-          message: `Add ${coupon.minQuantity} eligible items to use that code`,
+          message:
+            coupon.kind === 'ORDER'
+              ? `Add ${coupon.minQuantity} items to use that code`
+              : `Add ${coupon.minQuantity} eligible items to use that code`,
           reason: `You have ${eligibleQuantity}.`,
         },
       }
@@ -293,15 +338,15 @@ export async function evaluate(
   // ── what it is worth ──────────────────────────────────────────────────────
   let total =
     coupon.type === 'PERCENT'
-      ? money(eligibleTotal.times(coupon.value).dividedBy(100))
+      ? money(chargeableTotal.times(coupon.value).dividedBy(100))
       : money(coupon.value)
 
   if (coupon.type === 'PERCENT' && coupon.maxDiscountAmount) {
     if (total.greaterThan(coupon.maxDiscountAmount)) total = money(coupon.maxDiscountAmount)
   }
-  // Never more than the goods it applies to: a ₹500 code on a ₹300 pair takes
-  // ₹300, and the rest is not credit towards anything else.
-  if (total.greaterThan(eligibleTotal)) total = money(eligibleTotal)
+  // Never more than is still owed: a ₹500 code on a ₹300 pair takes ₹300, and
+  // the rest is not credit towards anything else.
+  if (total.greaterThan(chargeableTotal)) total = money(chargeableTotal)
 
   if (total.lessThanOrEqualTo(ZERO)) {
     return {
@@ -320,9 +365,11 @@ export async function evaluate(
   let allocated = ZERO
   eligible.forEach((line, index) => {
     const last = index === eligible.length - 1
-    const share = last
-      ? total.minus(allocated)
-      : money(total.times(line.totalPrice).dividedBy(eligibleTotal))
+    const weight = input.netByLine?.get(line.id) ?? line.totalPrice
+    const share =
+      last || chargeableTotal.equals(ZERO)
+        ? total.minus(allocated)
+        : money(total.times(weight).dividedBy(chargeableTotal))
     perLine.set(line.id, share)
     allocated = allocated.plus(share)
   })
@@ -368,4 +415,99 @@ export function allocate(
   }
 
   return { perLine, perCoupon }
+}
+
+/**
+ * What a shipping discount is worth against one delivery charge.
+ *
+ * Separate from `evaluate` because a shipping discount has nothing to do with
+ * the lines: it takes money off the rate the customer chose, and the only thing
+ * the cart decides is whether the minimum was met.
+ *
+ * The exclusion — "not on rates over ₹X" — is the reason the rate has to be
+ * known first, and why this runs after the shipping method has been priced
+ * rather than alongside the other discounts.
+ */
+export async function evaluateShipping(
+  tx: Prisma.TransactionClient,
+  coupon: CouponRecord,
+  input: {
+    userId: string
+    sessionId: string
+    lines: Line[]
+    shippingAmount: Prisma.Decimal
+    now?: Date
+  },
+): Promise<{ ok: true; total: Prisma.Decimal } | { ok: false; refusal: DiscountRefusal }> {
+  const gate = await checkGates(tx, coupon, input)
+  if (gate) return { ok: false, refusal: gate }
+
+  const cartTotal = input.lines.reduce((sum, line) => sum.plus(line.totalPrice), ZERO)
+  const cartQuantity = input.lines.reduce((sum, line) => sum + line.quantity, 0)
+
+  // The minimum is about the goods, as it is for an order discount: nobody
+  // means "spend ₹2,000 on postage".
+  if (coupon.minRequirement === 'PURCHASE_AMOUNT' && coupon.minCartValue) {
+    if (cartTotal.lessThan(coupon.minCartValue)) {
+      return {
+        ok: false,
+        refusal: {
+          code: 'COUPON_MINIMUM_NOT_MET',
+          message: `Spend ₹${coupon.minCartValue.toFixed(0)} to use that code`,
+          reason: `Your bag comes to ₹${cartTotal.toFixed(0)}.`,
+        },
+      }
+    }
+  }
+  if (coupon.minRequirement === 'ITEM_QUANTITY' && coupon.minQuantity) {
+    if (cartQuantity < coupon.minQuantity) {
+      return {
+        ok: false,
+        refusal: {
+          code: 'COUPON_MINIMUM_NOT_MET',
+          message: `Add ${coupon.minQuantity} items to use that code`,
+          reason: `You have ${cartQuantity}.`,
+        },
+      }
+    }
+  }
+
+  /**
+   * The excluded rate. Refused rather than silently applied at zero, and the
+   * message says which rate it is about — the customer's next move is to choose
+   * a cheaper delivery service, and they can only do that if they are told.
+   */
+  if (coupon.maxShippingAmount && input.shippingAmount.greaterThan(coupon.maxShippingAmount)) {
+    return {
+      ok: false,
+      refusal: {
+        code: 'COUPON_SHIPPING_EXCLUDED',
+        message: "That code doesn't apply to this delivery speed",
+        reason: `It covers delivery up to ₹${coupon.maxShippingAmount.toFixed(0)}; this one is ₹${input.shippingAmount.toFixed(0)}.`,
+      },
+    }
+  }
+
+  if (input.shippingAmount.lessThanOrEqualTo(ZERO)) {
+    return {
+      ok: false,
+      refusal: {
+        code: 'COUPON_NOT_APPLICABLE',
+        message: 'Your delivery is already free',
+      },
+    }
+  }
+
+  let total =
+    coupon.type === 'PERCENT'
+      ? money(input.shippingAmount.times(coupon.value).dividedBy(100))
+      : money(coupon.value)
+
+  if (coupon.type === 'PERCENT' && coupon.maxDiscountAmount) {
+    if (total.greaterThan(coupon.maxDiscountAmount)) total = money(coupon.maxDiscountAmount)
+  }
+  // Never more than the delivery costs: the remainder is not credit on the goods.
+  if (total.greaterThan(input.shippingAmount)) total = money(input.shippingAmount)
+
+  return { ok: true, total }
 }

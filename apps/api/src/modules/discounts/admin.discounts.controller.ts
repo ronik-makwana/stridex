@@ -1,6 +1,6 @@
 import type { RequestHandler } from 'express'
 import { validatedParams, validatedQuery } from '../../middleware/validate.js'
-import type { UuidParam } from '../../schemas/admin/common.schema.js'
+import { listMeta, type UuidParam } from '../../schemas/admin/common.schema.js'
 import type {
   CreateDiscountInput,
   DiscountListQuery,
@@ -12,7 +12,7 @@ import * as discounts from './discounts.service.js'
 export const list: RequestHandler = async (req, res) => {
   const query = validatedQuery<DiscountListQuery>(req)
   const { data, total } = await discounts.findMany(query)
-  res.status(200).json({ data, meta: { page: query.page, limit: query.limit, total } })
+  res.status(200).json({ data, meta: listMeta(total, query.page, query.limit) })
 }
 
 export const getOne: RequestHandler = async (req, res) => {

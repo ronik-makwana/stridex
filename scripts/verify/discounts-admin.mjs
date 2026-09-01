@@ -67,7 +67,10 @@ await sidebarLink.click()
 await page.waitForURL(/\/discounts$/, { timeout: 10000 })
 await page.getByRole('heading', { name: 'Discounts' }).waitFor({ timeout: 10000 })
 
+// Create is a menu now — one entry per kind. This suite is about product
+// discounts, so it takes that one.
 await page.getByRole('button', { name: /create discount/i }).first().click()
+await page.getByRole('menuitem', { name: /product discount/i }).click()
 await page.waitForURL(/\/discounts\/new$/, { timeout: 10000 })
 await page.getByLabel('Discount code').waitFor({ timeout: 10000 })
 

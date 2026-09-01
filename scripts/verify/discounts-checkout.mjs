@@ -221,15 +221,24 @@ const soloFirst = await call('POST', `/storefront/checkout/${id}/coupons`, {
   body: { code: codes.lonely },
 })
 check('the non-combinable code applies on its own', soloFirst.status === 200)
-const blocked = await call('POST', `/storefront/checkout/${id}/coupons`, {
+/**
+ * The other direction is *allowed*: only the arriving code's settings are read,
+ * and this one does combine with product discounts. A code already on the
+ * checkout gets no veto — an operator who has just changed a discount in the
+ * admin expects the next attempt to use what they changed.
+ */
+const arriving = await call('POST', `/storefront/checkout/${id}/coupons`, {
   token: shopper,
   body: { code: codes.ten },
 })
 check(
-  'and then blocks a combinable one — both have to agree',
-  blocked.status === 409,
-  `status ${blocked.status}`,
+  'and a combinable code may follow it — the arriving code decides',
+  arriving.status === 200,
+  `status ${arriving.status} ${arriving.body?.error?.message ?? ''}`,
 )
+for (const discount of arriving.body?.data?.discounts ?? []) {
+  await call('DELETE', `/storefront/checkout/${id}/coupons/${discount.couponId}`, { token: shopper })
+}
 
 // ── refusals a customer can act on ─────────────────────────────────────────
 const unknown = await call('POST', `/storefront/checkout/${id}/coupons`, {

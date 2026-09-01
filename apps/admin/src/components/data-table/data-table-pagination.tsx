@@ -11,8 +11,15 @@ export function DataTablePagination({
   onPageChange: (page: number) => void
   isFetching?: boolean
 }) {
+  if (!meta || meta.total === 0) return null
+
+  // Derived rather than trusted: an endpoint that forgets `totalPages` would
+  // otherwise compare `undefined <= 1`, come out false, and render "Page 1 of
+  // undefined" under a list that fits on one page.
+  const totalPages = meta.totalPages || Math.max(1, Math.ceil(meta.total / meta.limit))
+
   // One page of results needs no controls; showing disabled ones is noise.
-  if (!meta || meta.total === 0 || meta.totalPages <= 1) return null
+  if (totalPages <= 1) return null
 
   const first = (meta.page - 1) * meta.limit + 1
   const last = Math.min(meta.page * meta.limit, meta.total)
@@ -33,12 +40,12 @@ export function DataTablePagination({
           Previous
         </Button>
         <span className="text-muted-foreground px-1 text-sm">
-          Page {meta.page} of {meta.totalPages}
+          Page {meta.page} of {totalPages}
         </span>
         <Button
           variant="outline"
           size="sm"
-          disabled={meta.page >= meta.totalPages || isFetching}
+          disabled={meta.page >= totalPages || isFetching}
           onClick={() => onPageChange(meta.page + 1)}
         >
           Next
