@@ -4,6 +4,8 @@ import { env } from './config/env.js'
 import { logger } from './lib/logger.js'
 import { prisma } from './lib/prisma.js'
 import { ensureBucket } from './config/minio.js'
+import { startJobs } from './lib/scheduler.js'
+import { jobs } from './jobs/index.js'
 
 const app = createApp()
 
@@ -18,7 +20,15 @@ void ensureBucket()
   .then(() => logger.info({ bucket: env.S3_BUCKET }, 'object storage ready'))
   .catch((error) => logger.error({ err: error }, 'object storage unavailable — uploads will fail'))
 
+/**
+ * Expiry and reconciliation. Started here rather than inside the app so that a
+ * test importing `createApp()` does not quietly acquire a scheduler, and so an
+ * operator can run the same jobs from cron instead — see src/jobs/run.ts.
+ */
+const stopJobs = startJobs(jobs)
+
 async function shutdown(signal: string) {
+  stopJobs()
   logger.info({ signal }, 'shutting down')
   server.close(async () => {
     await prisma.$disconnect()
