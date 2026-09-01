@@ -1,6 +1,8 @@
 import * as React from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { authApi } from '@/features/auth/api'
+import { cartKeys, mergeGuestCart } from '@/features/cart/use-cart'
+import { mergeGuestWishlist, wishlistKeys } from '@/features/wishlist/use-wishlist'
 import { refreshSession } from '@/lib/api-client'
 import type { RegisterValues } from '@/features/auth/schemas'
 import type { ShopUser } from '@/types/api'
@@ -93,10 +95,32 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   )
 
   /**
-   * The one place a new session is adopted. Phase 14 hangs `afterAuth()` here —
-   * merging the guest cart and wishlist into the server's, on register as well
-   * as on login — which is exactly why register and login funnel through a
-   * single function instead of each setting state themselves.
+   * Everything the guest was carrying, handed to the account they just signed
+   * into. Runs on register as well as login — someone who fills a cart and then
+   * creates an account is the common path, not the edge case.
+   *
+   * Deliberately not allowed to fail the sign-in. If a merge request dies the
+   * customer is still signed in, and local storage is left untouched so the
+   * cart is still there to merge on the next attempt.
+   */
+  const afterAuth = React.useCallback(async () => {
+    const results = await Promise.allSettled([mergeGuestCart(), mergeGuestWishlist()])
+    if (results[0].status === 'fulfilled' && results[0].value) {
+      queryClient.setQueryData(cartKeys.server(), results[0].value)
+    }
+    if (results[1].status === 'fulfilled' && results[1].value) {
+      queryClient.setQueryData(wishlistKeys.server(), results[1].value)
+    }
+    // Both hooks switch query keys the moment `status` flips, so anything that
+    // did not merge cleanly is refetched rather than left stale.
+    void queryClient.invalidateQueries({ queryKey: cartKeys.all })
+    void queryClient.invalidateQueries({ queryKey: wishlistKeys.all })
+  }, [queryClient])
+
+  /**
+   * The one place a new session is adopted — which is why the merge hangs here
+   * rather than in the login and register screens, where a second copy would
+   * drift the day one of them grows a redirect.
    */
   const adoptSession = React.useCallback((session: { user: ShopUser; accessToken: string }) => {
     setAccessToken(session.accessToken)
@@ -104,8 +128,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser(session.user)
     setStatus('authenticated')
     setSessionExpired(false)
+    void afterAuth()
     return session.user
-  }, [])
+  }, [afterAuth])
 
   const login = React.useCallback(
     async (email: string, password: string) => adoptSession(await authApi.login({ email, password })),

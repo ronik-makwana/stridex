@@ -3,6 +3,7 @@ import { Outlet, useLocation } from 'react-router'
 import { toast } from 'sonner'
 import { Header } from '@/components/header'
 import { Footer } from '@/components/footer'
+import { CartDrawer } from '@/components/cart-drawer'
 import { useAuth } from '@/lib/auth'
 
 /**
@@ -44,6 +45,10 @@ export function ShopLayout() {
         <Outlet />
       </main>
       <Footer />
+
+      {/* Mounted once, opened from anywhere: adding from a product page and
+          adding from a wishlist tile are the same drawer. */}
+      <CartDrawer />
     </div>
   )
 }

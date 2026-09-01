@@ -1,6 +1,7 @@
 import { Link } from 'react-router'
 import { Price } from '@/components/price'
 import { Stars } from '@/components/star-rating'
+import { WishlistButton } from '@/components/wishlist-button'
 import type { ProductCard as ProductCardData } from '@/types/api'
 
 /**
@@ -30,6 +31,19 @@ export function ProductCard({ product }: { product: ProductCardData }) {
             No image
           </div>
         )}
+
+        {/*
+          Inside the card's <Link>, which is why the button stops the click
+          itself. Always visible rather than hover-only: on a touch screen
+          there is no hover, and a control that only exists on a mouse is a
+          control half the customers never find.
+        */}
+        <WishlistButton
+          productId={product.id}
+          title={product.title}
+          size="sm"
+          className="bg-background/85 hover:bg-background absolute top-2 right-2"
+        />
       </div>
 
       <div className="mt-3">

@@ -18,7 +18,7 @@ const buttonVariants = cva(
         default: 'bg-primary text-primary-foreground hover:bg-primary/85',
         /**
          * The scarce accent. Budgeted for the single highest-intent CTA on a
-         * screen — Add to bag, Pay — and nothing else. If two of these appear
+         * screen — Add to cart, Pay — and nothing else. If two of these appear
          * side by side, one of them is wrong.
          */
         accent: 'bg-accent text-accent-foreground hover:bg-accent/90',

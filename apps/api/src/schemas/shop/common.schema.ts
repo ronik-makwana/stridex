@@ -62,3 +62,4 @@ export const shopUuidParamSchema = z.object({
 
 export type ShopPaginationInput = z.infer<typeof shopPaginationSchema>
 export type SlugParam = z.infer<typeof slugParamSchema>
+export type ShopUuidParam = z.infer<typeof shopUuidParamSchema>

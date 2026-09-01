@@ -8,6 +8,8 @@ import CategoryPage from './category'
 import CollectionPage from './collection'
 import CollectionsPage from './collections'
 import SearchPage from './search'
+import CartPage from './cart'
+import WishlistPage from './wishlist'
 import NotFoundPage from './not-found'
 import LoginPage from './auth/login'
 import RegisterPage from './auth/register'
@@ -41,7 +43,10 @@ export const router = createBrowserRouter([
       { path: 'collections/:slug', element: <CollectionPage /> },
       { path: 'search', element: <SearchPage /> },
 
-      // Phase 14: /cart, /wishlist
+      // Public, both of them: filling a cart and saving things needs no account.
+      // The auth wall sits on checkout, which arrives in Phase 15.
+      { path: 'cart', element: <CartPage /> },
+      { path: 'wishlist', element: <WishlistPage /> },
 
       {
         element: <RequireAuth />,

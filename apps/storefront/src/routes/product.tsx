@@ -1,7 +1,9 @@
+import * as React from 'react'
 import { Link, useParams } from 'react-router'
 import { toast } from 'sonner'
 import { ApiError } from '@/lib/api-client'
 import { useProduct, useRelatedProducts } from '@/features/catalog/queries'
+import { openCartDrawer, useCart } from '@/features/cart/use-cart'
 import { useVariantSelection } from '@/features/catalog/use-variant-selection'
 import { ImageGallery } from '@/components/image-gallery'
 import { OptionPicker } from '@/components/size-picker'
@@ -9,6 +11,7 @@ import { Price, PriceRange } from '@/components/price'
 import { ProductCard } from '@/components/product-card'
 import { ReviewsPanel } from '@/components/reviews-panel'
 import { StockLabel } from '@/components/stock-label'
+import { WishlistButton } from '@/components/wishlist-button'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import NotFoundPage from './not-found'
@@ -18,6 +21,8 @@ export default function ProductPage() {
   const { data: product, isPending, error } = useProduct(slug)
   const { data: related } = useRelatedProducts(slug)
   const selection = useVariantSelection(product)
+  const { add } = useCart()
+  const [adding, setAdding] = React.useState(false)
 
   // An archived or non-existent product is a 404 from the API, and the customer
   // gets the same page either way — an archived product must not confirm it
@@ -31,6 +36,27 @@ export default function ProductPage() {
   // Sold out on the chosen combination, as opposed to the product as a whole.
   const chosenSoldOut = selection.variant?.stock === 'SOLD_OUT'
   const canBuy = !soldOut && !needsChoice && !chosenSoldOut
+
+  /**
+   * `priceSeen` travels with the line so a cart left open can say "was ₹7,499"
+   * later. It is display-only in both directions: the server prices the line
+   * from the catalog and only echoes this back as `previousPrice` (§5).
+   */
+  const addToCart = async () => {
+    const variant = selection.variant
+    if (!variant) return
+    setAdding(true)
+    try {
+      await add({ variantId: variant.id, quantity: 1, priceSeen: variant.price })
+      openCartDrawer()
+    } catch (error) {
+      // A 422 is the designed answer, not a failure: the last one sold while
+      // this page was open.
+      toast.error(error instanceof ApiError ? error.message : 'Could not add that to your cart')
+    } finally {
+      setAdding(false)
+    }
+  }
 
   return (
     <div className="mx-auto max-w-[1400px] px-4 py-6 sm:px-6 lg:px-10">
@@ -77,29 +103,38 @@ export default function ProductPage() {
             ))}
           </div>
 
-          <Button
-            /*
-             * The accent is spent only on a CTA the customer can actually act
-             * on. A disabled accent button renders as washed-out red, which
-             * spends the scarce colour on a dead control and makes "Sold out"
-             * look like a faded sale badge.
-             */
-            variant={canBuy ? 'accent' : 'default'}
-            size="lg"
-            className="mt-8 w-full"
-            disabled={!canBuy}
-            onClick={() =>
-              toast('The bag arrives in Phase 14', {
-                description: `${product.title} — ${selection.variant?.sku}`,
-              })
-            }
-          >
-            {soldOut || chosenSoldOut
-              ? 'Sold out'
-              : needsChoice
-                ? `Select a ${selection.missing[0]?.name.toLowerCase() ?? 'size'}`
-                : 'Add to bag'}
-          </Button>
+          <div className="mt-8 flex items-center gap-3">
+            <Button
+              /*
+               * The accent is spent only on a CTA the customer can actually act
+               * on. A disabled accent button renders as washed-out red, which
+               * spends the scarce colour on a dead control and makes "Sold out"
+               * look like a faded sale badge.
+               */
+              variant={canBuy ? 'accent' : 'default'}
+              size="lg"
+              className="flex-1"
+              disabled={!canBuy || adding}
+              onClick={() => void addToCart()}
+            >
+              {soldOut || chosenSoldOut
+                ? 'Sold out'
+                : needsChoice
+                  ? `Select a ${selection.missing[0]?.name.toLowerCase() ?? 'size'}`
+                  : adding
+                    ? 'Adding…'
+                    : 'Add to cart'}
+            </Button>
+
+            {/* Saving is per product and needs no size — which is why it stays
+                enabled on a sold-out one. Coming back for it later is rather
+                the point. */}
+            <WishlistButton
+              productId={product.id}
+              title={product.title}
+              className="border"
+            />
+          </div>
 
           {/* Only once a real, unavailable variant is chosen — not while the
               customer has simply not picked yet. */}

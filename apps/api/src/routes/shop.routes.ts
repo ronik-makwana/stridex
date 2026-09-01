@@ -2,7 +2,9 @@ import { Router } from 'express'
 import { shopAuthRouter } from '../modules/auth/shop.auth.routes.js'
 import { shopCategoriesRouter } from '../modules/categories/shop.categories.routes.js'
 import { shopCollectionsRouter } from '../modules/collections/shop.collections.routes.js'
+import { shopCartRouter } from '../modules/cart/shop.cart.routes.js'
 import { shopProductsRouter } from '../modules/products/shop.products.routes.js'
+import { shopWishlistRouter } from '../modules/wishlist/shop.wishlist.routes.js'
 import { shopSearchRouter } from '../modules/search/shop.search.routes.js'
 import { shopReviewsRouter } from '../modules/reviews/shop.reviews.routes.js'
 
@@ -33,6 +35,11 @@ shopRouter.use('/search', shopSearchRouter)
 // reviews lives under `/products/:slug/reviews`.
 shopRouter.use('/reviews', shopReviewsRouter)
 
-// Phase 14: /cart, /wishlist
+// Half public, half not, and the routers say which is which: hydrate prices a
+// guest's localStorage bag with no account, everything that writes a row is
+// behind the customer session. Neither reserves stock (§4).
+shopRouter.use('/cart', shopCartRouter)
+shopRouter.use('/wishlist', shopWishlistRouter)
+
 // Phase 15: /addresses, /checkout, /payments
 // Phase 16: /orders, /account        Phase 17: /reviews

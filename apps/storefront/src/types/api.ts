@@ -264,3 +264,65 @@ export type Suggestion = {
   }[]
   categories: Ref[]
 }
+// ─── cart and wishlist ───────────────────────────────────────────────────────
+
+/**
+ * Why a line is not what the customer left it as. One per line, never a
+ * page-level banner: "some items changed" makes them hunt for which (§16).
+ */
+export type CartLineReason = {
+  code: ShopErrorCode
+  message: string
+  /** PRICE_CHANGED — what they last saw, struck through. */
+  previousPrice?: string
+  /** OUT_OF_STOCK / QUANTITY_EXCEEDED — what they asked for before the clamp. */
+  requestedQuantity?: number
+}
+
+export type CartLine = {
+  /** The server row's id. Null on a guest line, which has no row. */
+  id: string | null
+  variantId: string
+  productId: string | null
+  slug: string | null
+  title: string | null
+  brand: { id: string; name: string; slug: string } | null
+  image: { url: string; altText: string | null } | null
+  sku: string | null
+  options: { name: string; value: string }[]
+  /** Every money field is a string the server computed. The client never adds up (§21). */
+  price: string | null
+  compareAtPrice: string | null
+  discountPercent: number | null
+  quantity: number
+  lineTotal: string | null
+  stock: StockBucket
+  maxQuantity: number
+  /** False means the line cannot go to checkout, and only Remove is offered. */
+  purchasable: boolean
+  reason: CartLineReason | null
+}
+
+export type Cart = {
+  items: CartLine[]
+  /** Units, not lines — the number on the cart badge. */
+  itemCount: number
+  subtotal: string
+  hasIssues: boolean
+}
+
+/** A saved product, plus its sizes for the inline "move to cart" picker. */
+export type WishlistItem = {
+  id: string
+  slug: string
+  title: string
+  brand: { id: string; name: string; slug: string } | null
+  image: { url: string; altText: string | null } | null
+  price: string | null
+  compareAtPrice: string | null
+  discountPercent: number | null
+  stock: StockBucket
+  variants: { id: string; label: string; price: string; stock: StockBucket; maxQuantity: number }[]
+  savedAt: string
+}
+

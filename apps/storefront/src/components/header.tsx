@@ -3,6 +3,8 @@ import { Link, NavLink, useLocation } from 'react-router'
 import { ChevronLeft, ChevronRight, Heart, Menu, Search, ShoppingBag, User } from 'lucide-react'
 import { useAuth } from '@/lib/auth'
 import { useCategoryTree } from '@/features/catalog/queries'
+import { useCart } from '@/features/cart/use-cart'
+import { useWishlist } from '@/features/wishlist/use-wishlist'
 import { loginPathFor } from '@/lib/redirect'
 import { cn } from '@/lib/utils'
 import { SearchOverlay } from '@/components/search-overlay'
@@ -34,29 +36,59 @@ function useScrolled(threshold = 8) {
   return scrolled
 }
 
+/**
+ * The count rides on the icon rather than beside it, and it is only ever a
+ * number the server sent: `itemCount` is units in the cart, computed there, so
+ * the badge cannot disagree with the subtotal (§21).
+ */
+function CountBadge({ count }: { count: number }) {
+  if (count <= 0) return null
+  return (
+    <span
+      className="bg-foreground text-background absolute -top-0.5 -right-0.5 flex min-w-4 items-center justify-center rounded-full px-1 text-[10px] leading-4 tabular-nums"
+      aria-hidden
+    >
+      {count > 99 ? '99+' : count}
+    </span>
+  )
+}
+
 function IconButton({
   to,
   label,
   onClick,
+  count = 0,
   children,
 }: {
   to?: string
   label: string
   onClick?: () => void
+  /** Rendered as a badge, and folded into the accessible name. */
+  count?: number
   children: React.ReactNode
 }) {
   const className =
-    'text-foreground/80 hover:text-foreground inline-flex size-10 items-center justify-center transition-colors'
+    'text-foreground/80 hover:text-foreground relative inline-flex size-10 items-center justify-center transition-colors'
+  const accessibleLabel = count > 0 ? `${label} (${count})` : label
+
   if (to) {
     return (
-      <Link to={to} aria-label={label} title={label} className={className}>
+      <Link to={to} aria-label={accessibleLabel} title={label} className={className}>
         {children}
+        <CountBadge count={count} />
       </Link>
     )
   }
   return (
-    <button type="button" onClick={onClick} aria-label={label} title={label} className={className}>
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={accessibleLabel}
+      title={label}
+      className={className}
+    >
       {children}
+      <CountBadge count={count} />
     </button>
   )
 }
@@ -66,6 +98,10 @@ export function Header() {
   const { isAuthenticated } = useAuth()
   const location = useLocation()
   const { data: tree } = useCategoryTree()
+  // Both are public reads: a guest's cart and wishlist live in localStorage and
+  // are priced by the API, so the badges work signed out.
+  const { itemCount } = useCart()
+  const { count: wishlistCount } = useWishlist()
   const [navOpen, setNavOpen] = React.useState(false)
   const [searchOpen, setSearchOpen] = React.useState(false)
   const [hovered, setHovered] = React.useState<string | null>(null)
@@ -154,14 +190,18 @@ export function Header() {
           <IconButton label="Search" onClick={() => setSearchOpen(true)}>
             <Search className="size-5" />
           </IconButton>
-          <IconButton to="/wishlist" label="Wishlist">
+          <IconButton to="/wishlist" label="Wishlist" count={wishlistCount}>
             <Heart className="size-5" />
           </IconButton>
           <IconButton to={accountHref} label={isAuthenticated ? 'Your account' : 'Sign in'}>
             <User className="size-5" />
           </IconButton>
-          {/* No count yet. Phase 14 reads it from `useCart()`. */}
-          <IconButton to="/cart" label="Bag">
+          {/*
+            A link, not a drawer trigger. The drawer opens on Add to cart; the
+            icon goes to the page, so the cart is always reachable by URL and by
+            the back button.
+          */}
+          <IconButton to="/cart" label="Cart" count={itemCount}>
             <ShoppingBag className="size-5" />
           </IconButton>
         </div>

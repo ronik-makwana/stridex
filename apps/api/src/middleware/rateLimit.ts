@@ -33,6 +33,19 @@ export const authLimiter = rateLimit({
   handler,
 })
 
+/**
+ * Cart and wishlist hydrate. Public, unauthenticated, and it takes an array of
+ * ids — which is a catalog dump with extra steps unless it is held down. A real
+ * customer hits this on a page load and a merge, not in a loop.
+ */
+export const hydrateLimiter = rateLimit({
+  windowMs: 60_000,
+  limit: isProduction ? 30 : 1_000,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  handler,
+})
+
 /** Refresh runs on every tab focus; it needs headroom but not none. */
 export const refreshLimiter = rateLimit({
   windowMs: 60_000,

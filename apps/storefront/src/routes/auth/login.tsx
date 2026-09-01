@@ -67,7 +67,7 @@ export default function LoginPage() {
     <div>
       <h1 className="text-xl">{guardMessage ?? 'Sign in'}</h1>
       <p className="text-muted-foreground mt-1.5 text-sm">
-        {guardMessage ? 'Your bag is saved and waiting.' : 'Welcome back.'}
+        {guardMessage ? 'Your cart is saved and waiting.' : 'Welcome back.'}
       </p>
 
       {banner && (
