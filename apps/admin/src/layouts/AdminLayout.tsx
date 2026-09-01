@@ -101,7 +101,14 @@ export function AdminLayout() {
             collapsed ? 'justify-center px-2' : 'justify-between px-4',
           )}
         >
-          {!collapsed && <span className="text-sm font-semibold">StrideX</span>}
+          {!collapsed && (
+            /* Right padding runs a tracking lighter than the left: the trailing
+               letter-space after the X would otherwise push the word off-centre
+               inside the rule. */
+            <span className="inline-block rounded-sm border-2 border-current px-[0.62em] py-[0.34em] pl-[0.8em] text-xs leading-none font-semibold tracking-[0.18em] uppercase">
+              StrideX
+            </span>
+          )}
           <Button
             variant="ghost"
             size="icon"

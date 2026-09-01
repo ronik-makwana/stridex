@@ -12,7 +12,7 @@ import { Link, Outlet } from 'react-router'
 export function AuthLayout() {
   return (
     <div className="flex min-h-svh flex-col items-center justify-center px-4 py-12">
-      <Link to="/" className="wordmark text-lg" aria-label="StrideX home">
+      <Link to="/" className="wordmark wordmark-boxed text-base" aria-label="StrideX home">
         StrideX
       </Link>
       <div className="mt-8 w-full max-w-[400px]">

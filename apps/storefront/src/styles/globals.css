@@ -127,6 +127,23 @@
 }
 
 /*
+ * The logo: the wordmark inside a printed rule. Only the two places that stand
+ * for the brand wear it — the header link and the auth card — never the mobile
+ * nav title, which renders a category name in the same type.
+ *
+ * The right padding is a tracking's worth lighter than the left: `letter-spacing`
+ * puts a trailing gap after the X that the box would otherwise read as extra
+ * space, leaving the word sitting visibly off-centre.
+ */
+@utility wordmark-boxed {
+  display: inline-block;
+  border: 2px solid currentColor;
+  border-radius: var(--radius);
+  padding: 0.34em 0.62em 0.34em 0.8em;
+  line-height: 1;
+}
+
+/*
  * Radix mounts and unmounts with `data-state`, so overlays and panels need real
  * keyframes to animate out. `tw-animate-css` is not installed; these are what
  * the dialog and drawer primitives actually use.

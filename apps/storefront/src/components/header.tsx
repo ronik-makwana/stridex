@@ -108,7 +108,11 @@ export function Header() {
           </SheetContent>
         </Sheet>
 
-        <Link to="/" className="wordmark shrink-0 text-lg lg:text-xl" aria-label="StrideX home">
+        <Link
+          to="/"
+          className="wordmark wordmark-boxed shrink-0 text-base lg:text-lg"
+          aria-label="StrideX home"
+        >
           StrideX
         </Link>
 
