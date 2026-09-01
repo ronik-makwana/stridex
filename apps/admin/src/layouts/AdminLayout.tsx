@@ -53,8 +53,8 @@ const NAV_SECTIONS = [
     label: 'Operations',
     items: [
       { to: '/inventory', label: 'Inventory', icon: Warehouse },
-      { to: '/orders', label: 'Orders', icon: ShoppingCart, disabled: true },
-      { to: '/payments', label: 'Payments', icon: CreditCard, disabled: true },
+      { to: '/orders', label: 'Orders', icon: ShoppingCart },
+      { to: '/payments', label: 'Payments', icon: CreditCard },
       { to: '/customers', label: 'Customers', icon: Users, disabled: true },
     ],
   },

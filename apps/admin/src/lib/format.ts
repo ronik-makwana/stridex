@@ -45,3 +45,18 @@ export function formatDate(value: string | Date | null | undefined): string {
   const date = typeof value === 'string' ? new Date(value) : value
   return date.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
 }
+
+/**
+ * Date and time together, for the rows where the order of two events on the
+ * same day is the whole point — a payment ledger, a status history.
+ */
+export function formatDateTime(value: string | Date | null | undefined): string {
+  if (!value) return '—'
+  const date = typeof value === 'string' ? new Date(value) : value
+  return date.toLocaleString('en-IN', {
+    day: 'numeric',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}

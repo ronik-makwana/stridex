@@ -7,6 +7,8 @@ import { adminBrandsRouter } from '../modules/brands/admin.brands.routes.js'
 import { adminCategoriesRouter } from '../modules/categories/admin.categories.routes.js'
 import { adminCollectionsRouter } from '../modules/collections/admin.collections.routes.js'
 import { adminInventoryRouter } from '../modules/inventory/admin.inventory.routes.js'
+import { adminOrdersRouter } from '../modules/orders/admin.orders.routes.js'
+import { adminPaymentsRouter } from '../modules/payments/admin.payments.routes.js'
 import { adminProductsRouter } from '../modules/products/admin.products.routes.js'
 import { adminTagsRouter } from '../modules/tags/admin.tags.routes.js'
 import { adminVariantOptionsRouter } from '../modules/variant-options/admin.variant-options.routes.js'
@@ -31,4 +33,10 @@ adminRouter.use('/tags', adminTagsRouter)
 adminRouter.use('/inventory', adminInventoryRouter)
 adminRouter.use('/collections', adminCollectionsRouter)
 adminRouter.use('/uploads', adminUploadsRouter)
-// Phases 8+: orders, payments, customers, dashboard.
+
+// Read-heavy by design: orders are created by the payment webhook, and the only
+// thing an operator changes here is where the parcel is.
+adminRouter.use('/orders', adminOrdersRouter)
+adminRouter.use('/payments', adminPaymentsRouter)
+
+// Phase 9: customers, dashboard, settings.

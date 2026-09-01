@@ -569,6 +569,140 @@ export type AuthSession = {
   accessToken: string
 }
 
+// ─── orders and payments ─────────────────────────────────────────────────────
+
+export type OrderStatus = 'PENDING' | 'PROCESSING' | 'SHIPPED' | 'DELIVERED' | 'CANCELLED' | 'REFUNDED'
+export type OrderPaymentStatus = 'PENDING' | 'PAID' | 'PARTIALLY_REFUNDED' | 'REFUNDED' | 'FAILED'
+export type PaymentRecordStatus =
+  | 'PENDING'
+  | 'AUTHORIZED'
+  | 'CAPTURED'
+  | 'FAILED'
+  | 'REFUNDED'
+  | 'VOIDED'
+
+export type OrderCustomer = { id: string; email: string; name: string | null }
+
+/** The list row: two status columns, because they answer different questions. */
+export type OrderRow = {
+  id: string
+  orderNumber: string
+  status: OrderStatus
+  paymentStatus: OrderPaymentStatus
+  customer: OrderCustomer | null
+  itemCount: number
+  totalAmount: string
+  currency: string
+  placedAt: string | null
+  createdAt: string
+}
+
+/** Every line is what was charged, not what the product costs today. */
+export type OrderItemRow = {
+  id: string
+  variantId: string | null
+  productTitle: string
+  sku: string
+  variantOptions: { name: string; value: string }[]
+  unitPrice: string
+  quantity: number
+  totalPrice: string
+  discountAmount: string
+  orderDiscountAllocated: string
+}
+
+export type OrderAddress = {
+  fullName: string
+  phone: string
+  addressLine1: string
+  addressLine2: string | null
+  city: string
+  state: string
+  postalCode: string
+  country: string
+}
+
+export type OrderHistoryEntry = {
+  id: string
+  fromStatus: OrderStatus | null
+  toStatus: OrderStatus
+  note: string | null
+  /** Null for the rows the webhook wrote — those are the system's. */
+  changedBy: { id: string; name: string | null } | null
+  createdAt: string
+}
+
+export type Order = OrderRow & {
+  items: OrderItemRow[]
+  subtotal: string
+  discountAmount: string
+  shippingAmount: string
+  taxAmount: string
+  shippingAddress: OrderAddress | null
+  billingAddress: OrderAddress | null
+  payments: {
+    id: string
+    provider: string
+    providerPaymentId: string
+    method: string | null
+    amount: string
+    status: PaymentRecordStatus
+    createdAt: string
+  }[]
+  history: OrderHistoryEntry[]
+  /** Served by the API: the modal never has to know the state machine. */
+  allowedTransitions: { to: OrderStatus; backwards: boolean }[]
+  updatedAt: string
+}
+
+export type OrderListQuery = {
+  page?: number
+  limit?: number
+  sort?: string
+  q?: string
+  status?: OrderStatus
+  paymentStatus?: OrderPaymentStatus
+  from?: string
+  to?: string
+}
+
+export type PaymentTransaction = {
+  id: string
+  type: 'AUTHORIZATION' | 'CAPTURE' | 'REFUND' | 'VOID'
+  amount: string
+  providerTransactionId: string | null
+  createdAt: string
+}
+
+export type PaymentRow = {
+  id: string
+  provider: string
+  providerPaymentId: string
+  method: string | null
+  amount: string
+  currency: string
+  status: PaymentRecordStatus
+  order: { id: string; orderNumber: string } | null
+  createdAt: string
+}
+
+export type Payment = PaymentRow & {
+  hasIdempotencyKey: boolean
+  transactions: PaymentTransaction[]
+  /** Verbatim, and kept collapsed in the UI: evidence, not a summary. */
+  providerResponse: unknown
+  updatedAt: string
+}
+
+export type PaymentListQuery = {
+  page?: number
+  limit?: number
+  sort?: string
+  q?: string
+  status?: PaymentRecordStatus
+  provider?: string
+}
+
 /** Every successful response is wrapped in `data`; lists add `meta`. */
 export type ApiResponse<T> = { data: T }
 

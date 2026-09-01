@@ -21,6 +21,10 @@ import InventoryTransactionsPage from './inventory/transactions'
 import InventoryVariantPage from './inventory/variant-detail'
 import CollectionsPage from './collections'
 import CollectionEditorPage, { NewCollectionPage } from './collections/collection-editor'
+import OrdersPage from './orders'
+import OrderDetailPage from './orders/order-detail'
+import PaymentsPage from './payments'
+import PaymentDetailPage from './payments/payment-detail'
 
 export const router = createBrowserRouter([
   {
@@ -62,6 +66,12 @@ export const router = createBrowserRouter([
           // Before ':id', or 'new' is read as a collection id.
           { path: 'collections/new', element: <NewCollectionPage /> },
           { path: 'collections/:id', element: <CollectionEditorPage /> },
+          // Read-heavy: orders are created by the payment webhook, and the only
+          // write here is the status transition.
+          { path: 'orders', element: <OrdersPage /> },
+          { path: 'orders/:id', element: <OrderDetailPage /> },
+          { path: 'payments', element: <PaymentsPage /> },
+          { path: 'payments/:id', element: <PaymentDetailPage /> },
           { path: '*', element: <NotFoundPage /> },
         ],
       },
