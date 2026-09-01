@@ -36,6 +36,14 @@ function reasonLabel(referenceType: string | null): string | null {
       return 'Set from the product editor'
     case 'product.duplicate':
       return 'Copied from another product'
+    // Written by checkout, never by a person. On-hand does not move on either —
+    // a reservation speaks for units, it does not remove them.
+    case 'checkout.reserve':
+      return 'Reserved for a checkout'
+    case 'checkout.cancel':
+      return 'Released — checkout cancelled'
+    case 'checkout.expire':
+      return 'Released — checkout expired'
     default:
       return null
   }

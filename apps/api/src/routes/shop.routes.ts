@@ -2,7 +2,9 @@ import { Router } from 'express'
 import { shopAuthRouter } from '../modules/auth/shop.auth.routes.js'
 import { shopCategoriesRouter } from '../modules/categories/shop.categories.routes.js'
 import { shopCollectionsRouter } from '../modules/collections/shop.collections.routes.js'
+import { shopAddressesRouter } from '../modules/addresses/shop.addresses.routes.js'
 import { shopCartRouter } from '../modules/cart/shop.cart.routes.js'
+import { shopCheckoutRouter } from '../modules/checkout/shop.checkout.routes.js'
 import { shopProductsRouter } from '../modules/products/shop.products.routes.js'
 import { shopWishlistRouter } from '../modules/wishlist/shop.wishlist.routes.js'
 import { shopSearchRouter } from '../modules/search/shop.search.routes.js'
@@ -41,5 +43,12 @@ shopRouter.use('/reviews', shopReviewsRouter)
 shopRouter.use('/cart', shopCartRouter)
 shopRouter.use('/wishlist', shopWishlistRouter)
 
-// Phase 15: /addresses, /checkout, /payments
+// Wholly behind the auth wall, unlike the cart above: an address belongs to
+// somebody by definition.
+shopRouter.use('/addresses', shopAddressesRouter)
+
+// Where the guest half ends: holding stock needs an account to hold it for.
+shopRouter.use('/checkout', shopCheckoutRouter)
+
+// Phase 15: /payments
 // Phase 16: /orders, /account        Phase 17: /reviews

@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { shopPhoneSchema } from './common.schema.js'
 
 /**
  * Storefront password policy. Shorter floor than an admin console would want
@@ -23,15 +24,9 @@ export const registerSchema = z.object({
   password: shopPasswordSchema,
   firstName: z.string().trim().min(1, 'Enter your first name').max(80),
   lastName: z.string().trim().max(80).optional().or(z.literal('')),
-  // Indian mobile numbers, optionally +91-prefixed. Optional at signup: asking
-  // for it before there is anything to ship costs conversions, and checkout
-  // collects it on the address anyway.
-  phone: z
-    .string()
-    .trim()
-    .regex(/^(?:\+91[-\s]?)?[6-9]\d{9}$/, 'Enter a valid 10-digit mobile number')
-    .optional()
-    .or(z.literal('')),
+  // Optional at signup: asking for it before there is anything to ship costs
+  // conversions, and checkout collects it on the address anyway.
+  phone: shopPhoneSchema.optional().or(z.literal('')),
 })
 
 export const shopLoginSchema = z.object({

@@ -42,6 +42,17 @@ export const SHOP_ERROR_CODES = {
 
 export type ShopErrorCode = (typeof SHOP_ERROR_CODES)[keyof typeof SHOP_ERROR_CODES]
 
+/**
+ * Indian mobile numbers, optionally +91-prefixed. Lives here rather than in one
+ * feature's schema because two places now collect a phone number — signup and
+ * a delivery address — and a courier is not interested in which form validated
+ * it. One regex, one message.
+ */
+export const shopPhoneSchema = z
+  .string()
+  .trim()
+  .regex(/^(?:\+91[-\s]?)?[6-9]\d{9}$/, 'Enter a valid 10-digit mobile number')
+
 /** `/p/:slug`, `/c/:slug` — the storefront addresses catalog records by slug. */
 export const slugParamSchema = z.object({
   slug: z
