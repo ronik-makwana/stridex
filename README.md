@@ -1,155 +1,258 @@
-# Shoe
+<div align="center">
 
-Shoe e-commerce monorepo. One Express API, two independent Vite SPAs, one Prisma package.
+# 👟 StrideX
 
-See [implementation-order.md](implementation-order.md) for the build plan and
-[repo-structure.md](repo-structure.md) for the layout and its rationale.
+**A shoe store, built properly.**
 
-**Status: Phase 0 complete.** Database, API shell, and admin auth are in place.
-Catalog modules start at Phase 1.
+One Express API, two React SPAs, one Postgres schema — with the parts most
+storefronts get wrong done deliberately: stock that cannot oversell, payments
+that cannot double-charge, and orders that still read correctly years after the
+catalogue has moved on.
+
+<br />
+
+![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?style=for-the-badge&logo=typescript&logoColor=white)
+![Node.js](https://img.shields.io/badge/Node.js_22-339933?style=for-the-badge&logo=node.js&logoColor=white)
+![Express](https://img.shields.io/badge/Express_5-000000?style=for-the-badge&logo=express&logoColor=white)
+![Prisma](https://img.shields.io/badge/Prisma_7-2D3748?style=for-the-badge&logo=prisma&logoColor=white)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL_17-4169E1?style=for-the-badge&logo=postgresql&logoColor=white)
+
+![React](https://img.shields.io/badge/React_19-61DAFB?style=for-the-badge&logo=react&logoColor=black)
+![Vite](https://img.shields.io/badge/Vite-646CFF?style=for-the-badge&logo=vite&logoColor=white)
+![Tailwind](https://img.shields.io/badge/Tailwind_v4-06B6D4?style=for-the-badge&logo=tailwindcss&logoColor=white)
+![TanStack Query](https://img.shields.io/badge/TanStack_Query-FF4154?style=for-the-badge&logo=reactquery&logoColor=white)
+![Zod](https://img.shields.io/badge/Zod-3E67B1?style=for-the-badge&logo=zod&logoColor=white)
+
+![Docker](https://img.shields.io/badge/Docker-2496ED?style=for-the-badge&logo=docker&logoColor=white)
+![MinIO](https://img.shields.io/badge/MinIO-C72E49?style=for-the-badge&logo=minio&logoColor=white)
+![Playwright](https://img.shields.io/badge/Playwright-2EAD33?style=for-the-badge&logo=playwright&logoColor=white)
+
+</div>
 
 ---
 
-## Getting started
+## Contents
+
+- [What it is](#what-it-is) · [Quick start](#quick-start) · [Ports](#ports)
+- [What's built](#whats-built) · [Architecture](#architecture)
+- [The decisions worth knowing](#the-decisions-worth-knowing)
+- [Verification](#verification) · [Commands](#commands) · [Status](#status)
+
+---
+
+## What it is
+
+A full e-commerce build in one monorepo — customer storefront, staff admin, and
+the API both talk to.
+
+| | |
+|---|---|
+| 🛍️ **Storefront** | Browse, filter, search, review, cart, wishlist, checkout, account |
+| 🧑‍💼 **Admin** | Catalogue, variants, inventory, orders, payments, customers, reviews, discounts |
+| ⚙️ **API** | 24 modules, ~47 tables, money and stock decided server-side, always |
+
+Every rule in [`ecommerce_frontend_backend_rules.md`](ecommerce_frontend_backend_rules.md)
+about inventory, payments, idempotency and order state is implemented and
+verified — 23 of 27 fully, with tax and refunds the known gaps.
+
+---
+
+## Quick start
 
 ```bash
 npm install
-cp .env.example apps/api/.env       # then fill in the two JWT secrets
+cp .env.example apps/api/.env       # fill in the two JWT secrets
 npm run services:up                 # postgres, minio, redis
 npm run db:migrate
 npm run db:seed
 ```
 
-Then, in two terminals:
+Three terminals:
 
 ```bash
 npm run dev:api      # http://localhost:4000
-npm run dev:admin    # http://localhost:5173
+npm run dev:admin    # http://localhost:5175
+npm run dev:shop     # http://localhost:5174
 ```
 
-Sign in with `admin@shoe.com` / `Admin@12345`.
-
-### Ports
-
-| Service | Port | Note |
-|---|---|---|
-| api | 4000 | |
-| admin | 5173 | |
-| storefront | 5174 | Part C |
-| postgres | **5433** | 5432 was already taken locally; change it back in `docker-compose.yml` and the `DATABASE_URL`s if yours is free |
-| minio | 9000 / 9001 | |
-| redis | 6379 | |
-
----
-
-## What Phase 0 ships
-
-**`packages/db`** — the full schema from the spec (32 tables), one migration, and
-a seed. The migration includes the raw SQL that Prisma cannot express: the
-`pgcrypto` / `pg_trgm` / `unaccent` extensions, GIN trigram indexes on
-`products.title` and `product_variants.sku`, and the partial unique index that
-enforces one default address per user. Because those are inlined into
-`migration.sql`, `prisma migrate deploy` builds a correct database from empty.
-
-Two Prisma 7 notes worth carrying forward:
-
-The connection URL is no longer allowed in `schema.prisma`. It lives in
-`prisma.config.ts` for Migrate and in the `PrismaPg` adapter for the runtime
-client.
-
-**Raw SQL in a migration is not enough to keep an index.** Migrate diffs the
-database against `schema.prisma`, so an index it can see but the schema does not
-declare is one it emits a `DROP INDEX` for on the next `migrate dev` — which is
-exactly what it tried to do to all four trigram indexes here. They are now
-declared in the schema as well, with `map:` pinning the names to match the raw
-SQL. Partial indexes are the opposite case: Prisma cannot express a `WHERE`
-clause and its diff ignores them, so those stay in raw SQL only. Both files in
-`prisma/sql/` carry a header saying which rule they fall under.
-
-Verified by deploying the migration into an empty database: all 7 custom
-indexes, all 3 extensions, and an empty diff afterwards.
-
-**`apps/api`** — Express 5 on ESM, `tsx` in dev and `tsup` for the build.
-`validate()` parses body/query/params with Zod and replaces them with the coerced
-output. The error handler maps `P2002 → 409` with the offending column as a field
-error, `P2003 → 422` with a reason the delete dialog can show, `P2025 → 404`, and
-`ZodError → 400`. pino, helmet, cors with credentials, three tiers of rate limit,
-cookie-parser.
-
-**Auth** — one `authService.login()` shared by both audiences, with the caller
-passing the roles it accepts. That is what makes it safe to expose the same logic
-at `/api/admin/auth/login` and, later, at `/api/storefront/auth/login`.
-
-```
-POST /api/admin/auth/login            ADMIN | STAFF only
-POST /api/admin/auth/refresh
-POST /api/admin/auth/logout
-GET  /api/admin/auth/me
-POST /api/admin/auth/forgot-password
-POST /api/admin/auth/reset-password
-```
-
-**`apps/admin`** — Vite, React 19, Tailwind v4, React Router 7, TanStack Query,
-RHF + Zod, shadcn primitives. Login, forgot/reset password, 403, the
-`RequireRole` guard, `AdminLayout` with the sidebar, an empty dashboard, and the
-session-expired modal.
-
----
-
-## The three decisions worth knowing
-
-**The access token never touches storage.** It lives in a module variable in
-`lib/auth-store.ts` and dies with the tab. The refresh token is an httpOnly
-cookie the app cannot read, scoped to `/api/admin/auth` and named
-`shoe_admin_refresh` so an admin session and a customer session coexist in one
-browser. A page reload restores the session by calling `/auth/refresh`, not by
-reading a token off disk. XSS therefore has 15 minutes and no way to persist.
-
-**Refresh rotates, and rotation is destructive.** Each refresh issues a new token
-and overwrites `user_sessions.refresh_token_hash` in place. A token that arrives
-with a valid signature but a stale hash was already rotated away — a replay — and
-the server revokes that session. It revokes only that one, not every session for
-the user: a second tab racing the refresh reaches the same branch, and signing
-someone out of every device for that is worse than the attack it prevents.
-
-That makes concurrent refreshes dangerous, so `api-client.ts` guarantees they
-cannot happen. `refreshSession()` is the only caller of the endpoint, it
-single-flights the in-flight promise, and app bootstrap goes through it too —
-React StrictMode's double-mount is by itself enough to trip reuse detection
-otherwise. A 401 arriving after a refresh has already finished is recognised as
-stale (the stored token no longer matches what the request was signed with) and
-simply retried, rather than starting a second refresh. Ten simultaneous requests
-with an expired token cost exactly one refresh call.
-
-**Login answers vaguely on purpose.** Unknown email, wrong password, and a
-customer account at the admin door all return the same `401 Invalid email or
-password`, and an unknown email still runs a real argon2 verify against a dummy
-hash so the timing matches. Only after the password checks out will the API admit
-that an account is suspended (`403`). Forgot-password returns the same `202`
-whether or not the account exists; in development the reset token goes to the API
-log, never to the response.
-
----
-
-## Verifying it
-
-```bash
-npm run typecheck -w @shoe/api
-npm run typecheck -w @shoe/admin
-npm run build -w @shoe/admin
-```
-
-Phase 0 is done when you sign in, land on the dashboard, survive a hard refresh,
-and stay signed in after the access token expires. All four are verified, along
-with the cookie flags, the redirect guards in both directions, logout, and the
-customer-at-the-admin-door rejection.
+Sign in to the admin with **`admin@shoe.com`** / **`Admin@12345`**.
 
 ### Dev fixtures
 
-| Email | Password | Purpose |
+Seeded only when `NODE_ENV !== 'production'`.
+
+| Email | Password | Why it exists |
 |---|---|---|
 | `admin@shoe.com` | `Admin@12345` | the real admin |
-| `shopper@shoe.com` | `Customer@12345` | CUSTOMER — must be refused at the admin login |
-| `benched@shoe.com` | `Customer@12345` | SUSPENDED STAFF — must get a 403, not a 401 |
+| `shopper@shoe.com` | `Customer@12345` | CUSTOMER — must be refused at the admin door |
+| `benched@shoe.com` | `Customer@12345` | SUSPENDED STAFF — must get 403, not 401 |
 
-The last two are seeded only when `NODE_ENV !== 'production'`.
+---
+
+## Ports
+
+| Service | Port | Note |
+|---|---|---|
+| API | `4000` | |
+| Storefront | `5174` | |
+| Admin | `5175` | |
+| Postgres | `5433` | 5432 was taken locally — change it back in `docker-compose.yml` and the `DATABASE_URL`s if yours is free |
+| MinIO | `9000` / `9001` | object storage for product media |
+| Redis | `6379` | running, **not yet used** — see [Status](#status) |
+
+---
+
+## What's built
+
+<details open>
+<summary><b>🛍️ Storefront</b></summary>
+
+- **Home** — full-height hero, department tiles, a scrolling top-categories band, curated collections, testimonials
+- **Catalogue** — category pages, collections (manual and rule-driven), search with typeahead, faceted filters with live counts, sorting, pagination
+- **Product** — gallery, variant picker with per-combination stock, spec table, related products, reviews
+- **Reviews** — write, edit and delete your own; verified-purchase badges
+- **Cart & wishlist** — drawer, quantity limits, revalidation on load
+- **Checkout** — one page: contact, delivery address, shipping method, billing address, payment. Discount codes, a live summary, and a ten-minute stock hold
+- **Account** — profile, address book, order history with per-order detail
+
+</details>
+
+<details open>
+<summary><b>🧑‍💼 Admin</b></summary>
+
+- **Catalogue** — products with media, variants and option matrices, brands, categories (drag-ordered tree), attributes, variant options, tags
+- **Collections** — manual and dynamic, with a rule builder and live preview
+- **Inventory** — stock levels, adjustments with a reason ledger, low-stock views
+- **Orders & payments** — read screens over real orders, a status machine that refuses illegal moves, payment records and reconciliation
+- **Discounts** — product, order and shipping codes with eligibility, minimums, usage limits, combination rules and scheduling
+- **Customers** — accounts, their orders, addresses and reviews
+- **Reviews & testimonials** — moderation for the first, curation for the second
+- **Dashboard** — revenue, orders, top products, low stock — plus ⌘K everywhere
+
+</details>
+
+<details>
+<summary><b>⚙️ API modules</b></summary>
+
+```
+account      addresses    attributes   auth         brands       cart
+categories   checkout     collections  customers    dashboard    discounts
+home         inventory    orders       payments     products     reviews
+search       tags         testimonials uploads      variant-options  wishlist
+```
+
+</details>
+
+---
+
+## Architecture
+
+```
+apps/
+  api/          Express 5 · Zod validation · Prisma · pino · JWT
+  admin/        React 19 · Vite · Tailwind v4 · shadcn · TanStack Query
+  storefront/   React 19 · Vite · Tailwind v4 · its own design system
+packages/
+  db/           Prisma schema, 14 migrations, seed
+scripts/verify/ API and Playwright suites, one per phase
+```
+
+The two SPAs are deliberately independent — separate component libraries,
+separate design languages, separate refresh cookies — so an admin session and a
+customer session can coexist in one browser and neither app's styling constrains
+the other.
+
+---
+
+## The decisions worth knowing
+
+**Stock cannot oversell.** A checkout reserves inventory with a conditional
+`UPDATE … WHERE quantity - reserved >= n`. Affected rows decide the outcome —
+never a `SELECT` followed by an `UPDATE`. Holds carry a ten-minute TTL, released
+lazily when anyone looks and by a sweep for the sessions nobody returns to.
+
+**Payments cannot double-charge.** An `Idempotency-Key` unique index settles
+duplicates by insert-and-catch, not check-then-insert. The provider's **webhook**
+is the only thing that creates an order; the browser saying "success" creates
+nothing. Payments the provider never confirms are reconciled on a schedule.
+
+**Orders are snapshots.** Title, SKU, options, unit price and discount code are
+copied onto `order_items` at purchase. An order renders correctly in five years,
+after the product has been renamed, repriced and archived.
+
+**Money is decided in one function.** `quoteSession()` computes subtotal, line
+discounts, order discount, shipping and shipping discount in that order, because
+each feeds the next. The client renders strings and adds nothing up.
+
+**The access token never touches storage.** It lives in a module variable and
+dies with the tab; the refresh token is an httpOnly cookie scoped per app.
+Refresh rotates destructively, replay revokes that one session, and the client
+single-flights refreshes so ten parallel 401s cost exactly one refresh call.
+
+**Login answers vaguely on purpose.** Unknown email, wrong password and a
+customer at the admin door all return the same `401`, with a real argon2 verify
+against a dummy hash so the timing matches.
+
+---
+
+## Verification
+
+Every phase ships an executable check — an API suite, a Playwright suite, or
+both. They run against the dev servers and clean up after themselves.
+
+```bash
+node scripts/verify/discounts-checkout.mjs      # 25 checks
+node scripts/verify/discounts-limits.mjs        # 18
+node scripts/verify/discounts-shipping.mjs      # 18
+node scripts/verify/discounts-order.mjs         # 17
+node scripts/verify/shipping-methods-api.mjs    # 19
+node scripts/verify/phase-13-api.mjs            # catalogue, facets, search
+```
+
+They are not decoration — they have caught a Radix trigger silently submitting a
+form, a Prisma `select` missing a field the type claimed was there, and a cart
+that reordered itself when a discount was applied.
+
+---
+
+## Commands
+
+```bash
+npm run dev:api | dev:admin | dev:shop        # development
+npm run build:api | build:admin | build:shop  # production build
+
+npm run db:migrate     # create and apply a migration
+npm run db:deploy      # apply pending migrations
+npm run db:seed        # admin + dev fixtures
+npm run db:studio      # Prisma Studio
+
+npm run services:up    # postgres, minio, redis
+npm run services:down
+```
+
+---
+
+## Status
+
+**Working end to end**: browse → cart → checkout → reserve stock → pay → webhook
+→ order, with discounts, and the admin to run it.
+
+**Known gaps**, in the order they'd block going live:
+
+| | |
+|---|---|
+| 📧 **Email** | Nothing is sent. Verification tokens are returned by the API instead of mailed |
+| 💸 **Refunds** | The statuses exist; no money moves |
+| 💳 **Real gateway** | The provider is a mock that signs its own webhooks — the path is real, the gateway isn't |
+| 🧾 **Tax** | `taxAmount` is written zero, by decision |
+| 🤖 **CI** | The verify suites are excellent and entirely manual |
+| 🔭 **Monitoring** | A 500 in production would be invisible |
+| 🔍 **SEO** | Phase 19 — page titles, JSON-LD, sitemap, error boundaries |
+
+Redis is running and unused; it is the natural home for the rate-limit store,
+job locking, the email queue and a handful of caches.
+
+<div align="center">
+<br />
+<sub>Built with an unreasonable amount of attention to the checkout.</sub>
+</div>
