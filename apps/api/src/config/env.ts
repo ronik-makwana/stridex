@@ -31,10 +31,32 @@ const envSchema = z.object({
 
   REDIS_URL: z.string().optional(),
 
+  /**
+   * Which provider `POST /payments` uses. 'mock' is a real implementation of
+   * the same interface Razorpay will use — it signs its webhooks with the same
+   * HMAC-SHA256 scheme, so `verifySignature` is exercised long before real
+   * money is involved.
+   */
+  PAYMENT_PROVIDER: z.enum(['mock']).default('mock'),
+  /**
+   * The mock's webhook secret. Defaulted in development because a provider
+   * nobody can run is a provider nobody tests; production must set it, and the
+   * refine below is what makes that non-optional.
+   */
+  PAYMENT_MOCK_SECRET: z.string().min(16).default('mock_webhook_secret_change_me'),
+
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info'),
 })
 
-const parsed = envSchema.safeParse(process.env)
+const parsed = envSchema
+  // A default secret is a convenience in development and a vulnerability in
+  // production: anyone who has read this file could forge a paid webhook.
+  .refine(
+    (value) =>
+      value.NODE_ENV !== 'production' || value.PAYMENT_MOCK_SECRET !== 'mock_webhook_secret_change_me',
+    { path: ['PAYMENT_MOCK_SECRET'], message: 'Set a real webhook secret in production' },
+  )
+  .safeParse(process.env)
 
 if (!parsed.success) {
   const issues = parsed.error.issues

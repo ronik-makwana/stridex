@@ -837,6 +837,7 @@ model CheckoutSession {
   items        CheckoutItem[]
   reservations InventoryReservation[]
   redemptions  CouponRedemption[]
+  payments     Payment[]
 
   @@index([userId, createdAt])
   // The expiry sweep reads exactly this: ACTIVE sessions past their moment.
@@ -1049,7 +1050,18 @@ model StoreSettings {
 
 model Payment {
   id                String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  orderId           String              @map("order_id") @db.Uuid
+  /**
+   * Null between the attempt and the webhook, which is the whole window this
+   * table exists to survive. The order is written when the provider confirms
+   * (§8); until then a payment belongs to a checkout session and nothing else.
+   */
+  orderId           String?             @map("order_id") @db.Uuid
+  /**
+   * What was being paid for. Set at the attempt and kept afterwards: it is how
+   * a webhook arriving with only a provider id finds its way home, and how a
+   * payment with no order yet knows whose it is.
+   */
+  checkoutSessionId String?             @map("checkout_session_id") @db.Uuid
   provider          String
   providerPaymentId String              @map("provider_payment_id")
   amount            Decimal             @db.Decimal(12, 2)
@@ -1071,12 +1083,16 @@ model Payment {
   createdAt         DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt         DateTime            @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  order        Order                @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  order        Order?               @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  // SetNull rather than Cascade: a payment outlives the session that started
+  // it. Losing the row would lose the evidence that money moved.
+  session      CheckoutSession?     @relation(fields: [checkoutSessionId], references: [id], onDelete: SetNull)
   transactions PaymentTransaction[]
 
   @@unique([provider, providerPaymentId])
   @@index([status, createdAt])
   @@index([orderId])
+  @@index([checkoutSessionId])
   @@map("payments")
 }
 

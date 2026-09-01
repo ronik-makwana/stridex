@@ -5,6 +5,7 @@ import { shopCollectionsRouter } from '../modules/collections/shop.collections.r
 import { shopAddressesRouter } from '../modules/addresses/shop.addresses.routes.js'
 import { shopCartRouter } from '../modules/cart/shop.cart.routes.js'
 import { shopCheckoutRouter } from '../modules/checkout/shop.checkout.routes.js'
+import { shopPaymentsRouter } from '../modules/payments/shop.payments.routes.js'
 import { shopProductsRouter } from '../modules/products/shop.products.routes.js'
 import { shopWishlistRouter } from '../modules/wishlist/shop.wishlist.routes.js'
 import { shopSearchRouter } from '../modules/search/shop.search.routes.js'
@@ -50,5 +51,7 @@ shopRouter.use('/addresses', shopAddressesRouter)
 // Where the guest half ends: holding stock needs an account to hold it for.
 shopRouter.use('/checkout', shopCheckoutRouter)
 
-// Phase 15: /payments
+// Starting a payment is a customer action; confirming one is not. The webhook
+// that does the confirming is mounted outside this router entirely.
+shopRouter.use('/payments', shopPaymentsRouter)
 // Phase 16: /orders, /account        Phase 17: /reviews
