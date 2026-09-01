@@ -22,7 +22,7 @@ export default function HomePage() {
   const { data, isPending } = useHome()
 
   React.useEffect(() => {
-    document.title = 'StrideX — shoes for the long way round'
+    document.title = 'StrideX | Shoes for the long way round'
   }, [])
 
   return (

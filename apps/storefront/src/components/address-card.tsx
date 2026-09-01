@@ -22,6 +22,17 @@ export function AddressLines({ address }: { address: Address }) {
   )
 }
 
+/**
+ * The same address on one line, for the places that are listing addresses to
+ * choose between rather than displaying the chosen one — a menu row is a
+ * comparison, and five stacked lines each is a wall.
+ */
+export function addressSummary(address: Address): string {
+  return [address.addressLine1, address.addressLine2, address.city, address.state, address.postalCode]
+    .filter(Boolean)
+    .join(', ')
+}
+
 export function AddressCard({
   address,
   actions,

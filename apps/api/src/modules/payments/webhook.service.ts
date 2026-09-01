@@ -153,6 +153,10 @@ async function capturePayment(paymentId: string, event: ParsedWebhook): Promise<
         subtotal: session.subtotal,
         discountAmount: session.discountAmount,
         shippingAmount: session.shippingAmount,
+        // The service, not just the charge. An order billed for next-day that
+        // ships on the slow van is a refund, and the amount alone does not say
+        // which one was bought.
+        shippingMethod: session.shippingMethod,
         // No tax, by decision. The column stays, written zero, never rendered.
         taxAmount: 0,
         totalAmount: session.totalAmount,

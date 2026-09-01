@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { SHIPPING_METHOD_CODES } from '../../modules/checkout/shipping.methods.js'
 
 /**
  * `POST /checkout` takes almost nothing. The lines come from the customer's
@@ -27,3 +28,14 @@ export const setCheckoutAddressSchema = z.object({
 })
 
 export type SetCheckoutAddressInput = z.infer<typeof setCheckoutAddressSchema>
+
+/**
+ * A code from the static table, and nothing else. No rate, no label: the client
+ * naming its own delivery charge is the one thing this endpoint exists to
+ * prevent (§21).
+ */
+export const setShippingMethodSchema = z.object({
+  method: z.enum(SHIPPING_METHOD_CODES, { message: 'Choose a delivery speed' }),
+})
+
+export type SetShippingMethodInput = z.infer<typeof setShippingMethodSchema>

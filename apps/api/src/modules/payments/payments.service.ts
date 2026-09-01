@@ -105,6 +105,15 @@ async function payableOrThrow(userId: string, checkoutSessionId: string) {
   if (!session.shippingAddressId) {
     throw unprocessable('Choose a delivery address first')
   }
+  /**
+   * Billing falls back to shipping when the customer never chose separately,
+   * so reaching here without one means something wrote a session the checkout
+   * page cannot produce. Charging a card with no address to bill it to is not
+   * a thing to do on the strength of a client having disabled its own button.
+   */
+  if (!session.billingAddressId) {
+    throw unprocessable('Choose a billing address first')
+  }
 
   return session
 }

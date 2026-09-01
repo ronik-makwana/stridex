@@ -300,6 +300,8 @@ export type Order = {
   subtotal: string
   discountAmount: string
   shippingAmount: string
+  /** The delivery service that was paid for, already labelled by the server. */
+  shippingMethod: string
   totalAmount: string
   currency: string
   shippingAddress: {
@@ -359,6 +361,18 @@ export type CheckoutItem = {
  * Every money field is a string the server computed (§21). Nothing in the
  * checkout page adds anything up — including the total it puts on the button.
  */
+/**
+ * One delivery service. `amount` is what *this* order pays for it — the free
+ * delivery waiver is already applied — so the page renders the string and never
+ * works a charge out for itself (§21).
+ */
+export type ShippingMethodOption = {
+  code: string
+  label: string
+  eta: string
+  amount: string
+}
+
 export type CheckoutSession = {
   id: string
   status: CheckoutStatus
@@ -368,6 +382,9 @@ export type CheckoutSession = {
   subtotal: string
   discountAmount: string
   shippingAmount: string
+  /** The chosen service's code, and every service priced for this order. */
+  shippingMethod: string
+  shippingMethods: ShippingMethodOption[]
   totalAmount: string
   currency: string
   shippingAddress: Address | null

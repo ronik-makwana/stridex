@@ -112,6 +112,11 @@ export function useCheckoutSession() {
     onSuccess: write,
   })
 
+  const setShippingMethod = useMutation({
+    mutationFn: (method: string) => checkoutApi.setShippingMethod(sessionId!, method),
+    onSuccess: write,
+  })
+
   const cancel = useMutation({
     mutationFn: () => checkoutApi.cancel(sessionId!),
     onSuccess: () => {
@@ -133,6 +138,8 @@ export function useCheckoutSession() {
     loadError: query.error instanceof ApiError ? query.error : null,
     setAddress: setAddress.mutateAsync,
     isSettingAddress: setAddress.isPending,
+    setShippingMethod: setShippingMethod.mutateAsync,
+    isSettingShippingMethod: setShippingMethod.isPending,
     cancel: cancel.mutateAsync,
     refetch: query.refetch,
   }

@@ -53,7 +53,23 @@ function serializeItem(item: CheckoutSessionRecord['items'][number]) {
   }
 }
 
-export function serializeCheckoutSession(session: CheckoutSessionRecord) {
+/**
+ * The delivery services, priced for *this* order. Computed by the service and
+ * passed in, because both the rate and the free-delivery waiver depend on the
+ * order's discounted goods total — a list of prices the client worked out for
+ * itself is a list the client could get wrong (§21).
+ */
+export type ShippingMethodOption = {
+  code: string
+  label: string
+  eta: string
+  amount: Prisma.Decimal
+}
+
+export function serializeCheckoutSession(
+  session: CheckoutSessionRecord,
+  shippingMethods: ShippingMethodOption[] = [],
+) {
   return {
     id: session.id,
     status: session.status,
@@ -66,6 +82,14 @@ export function serializeCheckoutSession(session: CheckoutSessionRecord) {
     subtotal: money(session.subtotal),
     discountAmount: money(session.discountAmount),
     shippingAmount: money(session.shippingAmount),
+    /** The chosen service, and what every service would have cost. */
+    shippingMethod: session.shippingMethod,
+    shippingMethods: shippingMethods.map((method) => ({
+      code: method.code,
+      label: method.label,
+      eta: method.eta,
+      amount: money(method.amount),
+    })),
     totalAmount: money(session.totalAmount),
     currency: session.currency,
     shippingAddress: session.shippingAddress ? serializeShopAddress(session.shippingAddress) : null,

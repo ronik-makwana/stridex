@@ -6,6 +6,7 @@ import { shopUuidParamSchema } from '../../schemas/shop/common.schema.js'
 import {
   createCheckoutSchema,
   setCheckoutAddressSchema,
+  setShippingMethodSchema,
 } from '../../schemas/shop/checkout.schema.js'
 import * as controller from './shop.checkout.controller.js'
 
@@ -33,6 +34,12 @@ shopCheckoutRouter.post(
   '/:id/address',
   validate({ params: shopUuidParamSchema, body: setCheckoutAddressSchema }),
   controller.setAddresses,
+)
+
+shopCheckoutRouter.post(
+  '/:id/shipping-method',
+  validate({ params: shopUuidParamSchema, body: setShippingMethodSchema }),
+  controller.setShippingMethod,
 )
 
 shopCheckoutRouter.delete('/:id', validate({ params: shopUuidParamSchema }), controller.cancel)

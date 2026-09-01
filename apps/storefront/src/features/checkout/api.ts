@@ -22,6 +22,14 @@ export const checkoutApi = {
   setAddress: (id: string, shippingAddressId: string, billingAddressId?: string) =>
     post<CheckoutSession>(`/checkout/${id}/address`, { shippingAddressId, billingAddressId }),
 
+  /**
+   * A code, never a rate. The server answers with the whole re-quoted session,
+   * because choosing express changed the total the Pay button is about to
+   * charge.
+   */
+  setShippingMethod: (id: string, method: string) =>
+    post<CheckoutSession>(`/checkout/${id}/shipping-method`, { method }),
+
   cancel: (id: string) => del(`/checkout/${id}`),
 
   /**

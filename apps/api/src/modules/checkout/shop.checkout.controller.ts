@@ -5,6 +5,7 @@ import type { ShopUuidParam } from '../../schemas/shop/common.schema.js'
 import type {
   CreateCheckoutInput,
   SetCheckoutAddressInput,
+  SetShippingMethodInput,
 } from '../../schemas/shop/checkout.schema.js'
 import * as checkout from './checkout.service.js'
 
@@ -53,6 +54,20 @@ export const setAddresses: RequestHandler = async (req, res) => {
     ownerId(req),
     validatedParams<ShopUuidParam>(req).id,
     req.body as SetCheckoutAddressInput,
+  )
+  res.status(200).json({ data: session })
+}
+
+/**
+ * Also answers with the whole session: picking express changed the shipping
+ * line, and the shipping line changed the total the Pay button is about to
+ * charge (§21).
+ */
+export const setShippingMethod: RequestHandler = async (req, res) => {
+  const session = await checkout.setShippingMethod(
+    ownerId(req),
+    validatedParams<ShopUuidParam>(req).id,
+    (req.body as SetShippingMethodInput).method,
   )
   res.status(200).json({ data: session })
 }

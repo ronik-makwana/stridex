@@ -1,5 +1,6 @@
 import type { Prisma } from '@shoe/db'
 import { allowedTransitions } from '../../modules/orders/order-status.js'
+import { labelFor } from '../../modules/checkout/shipping.methods.js'
 
 /**
  * The admin's view of an order. It differs from the customer's in what it is
@@ -85,6 +86,8 @@ export function serializeAdminOrder(order: AdminOrderRecord) {
     subtotal: money(order.subtotal),
     discountAmount: money(order.discountAmount),
     shippingAmount: money(order.shippingAmount),
+    /** The service that was paid for, resolved to its label. */
+    shippingMethod: labelFor(order.shippingMethod),
     /** Always zero and never rendered — kept because the column is still there. */
     taxAmount: money(order.taxAmount),
 

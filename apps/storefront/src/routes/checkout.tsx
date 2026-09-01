@@ -9,10 +9,13 @@ import { useCreateAddress } from '@/features/addresses/mutations'
 import type { AddressValues } from '@/features/addresses/schemas'
 import { checkoutApi } from '@/features/checkout/api'
 import { useCheckoutSession, useCountdown } from '@/features/checkout/use-checkout'
-import { AddressLines } from '@/components/address-card'
+import { addressSummary } from '@/components/address-card'
 import { AddressForm } from '@/components/address-form'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
+import { Dialog, DialogContent } from '@/components/ui/dialog'
+import { Label } from '@/components/ui/label'
+import { Select } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Spinner } from '@/components/ui/spinner'
 import { cn } from '@/lib/utils'
@@ -36,6 +39,8 @@ export default function CheckoutPage() {
     loadError,
     setAddress,
     isSettingAddress,
+    setShippingMethod,
+    isSettingShippingMethod,
     cancel,
     onPaymentAttempted,
   } = useCheckoutSession()
@@ -61,6 +66,8 @@ export default function CheckoutPage() {
       email={user?.email ?? ''}
       setAddress={setAddress}
       isSettingAddress={isSettingAddress}
+      setShippingMethod={setShippingMethod}
+      isSettingShippingMethod={isSettingShippingMethod}
       cancel={cancel}
       onPaymentAttempted={onPaymentAttempted}
     />
@@ -74,6 +81,8 @@ function Live({
   email,
   setAddress,
   isSettingAddress,
+  setShippingMethod,
+  isSettingShippingMethod,
   cancel,
   onPaymentAttempted,
 }: {
@@ -81,6 +90,8 @@ function Live({
   email: string
   setAddress: (input: { shippingAddressId: string; billingAddressId?: string }) => Promise<unknown>
   isSettingAddress: boolean
+  setShippingMethod: (method: string) => Promise<unknown>
+  isSettingShippingMethod: boolean
   cancel: () => Promise<unknown>
   onPaymentAttempted: () => void
 }) {
@@ -89,7 +100,24 @@ function Live({
   const countdown = useCountdown(session.expiresAt)
 
   const [addingAddress, setAddingAddress] = React.useState(false)
-  const [sameAsDelivery, setSameAsDelivery] = React.useState(true)
+  /**
+   * Both derived from the session rather than assumed, so a refresh lands on
+   * the checkout the customer left: a session whose billing differs from its
+   * shipping is one where they already unticked the box and chose.
+   */
+  const [sameAsDelivery, setSameAsDelivery] = React.useState(
+    () =>
+      !session.billingAddress ||
+      !session.shippingAddress ||
+      session.billingAddress.id === session.shippingAddress.id,
+  )
+  const [billingChoice, setBillingChoice] = React.useState(() =>
+    session.billingAddress &&
+    session.shippingAddress &&
+    session.billingAddress.id !== session.shippingAddress.id
+      ? session.billingAddress.id
+      : '',
+  )
   const [paying, setPaying] = React.useState(false)
   const [problem, setProblem] = React.useState<ApiError | null>(null)
   const [acknowledged, setAcknowledged] = React.useState(false)
@@ -118,6 +146,35 @@ function Live({
     setAddingAddress(false)
     await setAddress({ shippingAddressId: created.id })
   }
+
+  /**
+   * 'new' only opens the form — nothing is written until it is saved, which is
+   * why the readiness check below wants a real id rather than a choice.
+   */
+  const chooseBilling = async (value: string) => {
+    setBillingChoice(value)
+    if (!value || value === 'new' || !selected) return
+    await setAddress({ shippingAddressId: selected.id, billingAddressId: value })
+  }
+
+  const saveBillingAddress = async (values: AddressValues) => {
+    const created = await createAddress.mutateAsync(values)
+    setBillingChoice(created.id)
+    if (selected) {
+      await setAddress({ shippingAddressId: selected.id, billingAddressId: created.id })
+    }
+  }
+
+  /**
+   * Settled means *the server agrees*: a chosen id that the session has come
+   * back carrying. A select that has been touched is not a billing address,
+   * and Pay is gated on this rather than on what the dropdown displays (§21).
+   */
+  const billingSettled =
+    sameAsDelivery ||
+    (billingChoice !== '' &&
+      billingChoice !== 'new' &&
+      session.billingAddress?.id === billingChoice)
 
   /**
    * Pay disables on click and does not re-enable. Recovery is a reload, which
@@ -177,8 +234,15 @@ function Live({
           <section>
             <h2 className="text-xs tracking-[0.14em] uppercase">Delivery address</h2>
 
+            {/*
+              Every saved address, one per line, one of them chosen. The default
+              is already selected by the time this renders, so the list is a
+              confirmation the customer skims rather than a question — but the
+              others are right there, which is the whole difference between
+              changing your mind in one click and hunting for a control.
+            */}
             {rows.length > 0 && (
-              <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              <div className="mt-4 divide-y border">
                 {rows.map((address) => {
                   const isChosen = selected?.id === address.id
                   return (
@@ -187,46 +251,106 @@ function Live({
                       type="button"
                       onClick={() => void chooseAddress(address)}
                       disabled={isSettingAddress}
+                      aria-pressed={isChosen}
                       className={cn(
-                        'border p-4 text-left transition-colors',
-                        isChosen ? 'border-foreground' : 'hover:border-foreground/40',
+                        'flex w-full items-start gap-3 p-4 text-left transition-colors',
+                        isChosen ? 'bg-secondary/60' : 'hover:bg-secondary/30',
+                        isSettingAddress && 'opacity-60',
                       )}
                     >
-                      <span className="flex items-center gap-2 text-xs tracking-[0.14em] uppercase">
-                        <span
-                          className={cn(
-                            'inline-flex size-3.5 items-center justify-center rounded-full border',
-                            isChosen && 'border-foreground',
+                      <Radio checked={isChosen} />
+                      <span className="min-w-0 flex-1">
+                        <span className="flex flex-wrap items-baseline gap-x-2">
+                          <span className="text-sm">{address.fullName}</span>
+                          {address.isDefault && (
+                            <span className="text-muted-foreground border px-1.5 py-0.5 text-[10px] tracking-[0.12em] uppercase">
+                              Default
+                            </span>
                           )}
-                        >
-                          {isChosen && <span className="bg-foreground size-1.5 rounded-full" />}
                         </span>
-                        {address.isDefault ? 'Default' : 'Address'}
+                        {/* Wraps rather than truncates: an address with its end
+                            cut off is an address the customer cannot check. */}
+                        <span className="text-muted-foreground mt-0.5 block text-xs leading-relaxed">
+                          {addressSummary(address)}
+                          <span className="px-1.5" aria-hidden>
+                            ·
+                          </span>
+                          <span className="tabular-nums">{address.phone}</span>
+                        </span>
                       </span>
-                      <div className="mt-2">
-                        <AddressLines address={address} />
-                      </div>
                     </button>
                   )
                 })}
               </div>
             )}
 
-            {addingAddress ? (
-              <div className="mt-4 border p-5">
-                {/* Expands inline. Navigating away to add an address is how a
-                    customer loses a session that is holding their stock. */}
+            <button
+              type="button"
+              onClick={() => setAddingAddress(true)}
+              className="text-muted-foreground hover:text-foreground mt-3 text-sm underline underline-offset-4 transition-colors"
+            >
+              {rows.length > 0 ? 'Use a different address' : 'Add a delivery address'}
+            </button>
+
+            {/*
+              A modal rather than a form pushed into the page: the list, the
+              shipping charge and the total all sit around it, and expanding
+              seven fields between them shoves the summary the customer is
+              reading down the page. It never navigates away — a checkout left
+              to add an address is a session still holding the stock.
+            */}
+            <Dialog open={addingAddress} onOpenChange={setAddingAddress}>
+              <DialogContent
+                title="Add an address"
+                description="Saved to your account, and used for this order."
+              >
                 <AddressForm
                   onSubmit={saveNewAddress}
                   onCancel={() => setAddingAddress(false)}
-                  submitLabel="Use this address"
+                  submitLabel="Save address"
                 />
-              </div>
-            ) : (
-              <Button variant="outline" size="sm" className="mt-4" onClick={() => setAddingAddress(true)}>
-                + Use a new address
-              </Button>
-            )}
+              </DialogContent>
+            </Dialog>
+          </section>
+
+          {/*
+            Between the address and the bill, because it is the last thing that
+            changes the total and the first thing a customer in a hurry looks
+            for. Every price here was quoted by the server for this order —
+            "Free" against standard is the delivery threshold already applied,
+            not a label the page decided to draw (§21).
+          */}
+          <section>
+            <h2 className="text-xs tracking-[0.14em] uppercase">Shipping method</h2>
+            <div className="mt-4 divide-y border">
+              {session.shippingMethods.map((method) => {
+                const isChosen = session.shippingMethod === method.code
+                const free = Number(method.amount) === 0
+                return (
+                  <button
+                    key={method.code}
+                    type="button"
+                    onClick={() => void setShippingMethod(method.code)}
+                    disabled={isSettingShippingMethod}
+                    aria-pressed={isChosen}
+                    className={cn(
+                      'flex w-full items-center gap-3 p-4 text-left transition-colors',
+                      isChosen ? 'bg-secondary/60' : 'hover:bg-secondary/30',
+                      isSettingShippingMethod && 'opacity-60',
+                    )}
+                  >
+                    <Radio checked={isChosen} />
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-sm">{method.label}</span>
+                      <span className="text-muted-foreground block text-xs">{method.eta}</span>
+                    </span>
+                    <span className="shrink-0 text-sm tabular-nums">
+                      {free ? 'Free' : formatMoney(method.amount)}
+                    </span>
+                  </button>
+                )
+              })}
+            </div>
           </section>
 
           <section>
@@ -236,35 +360,73 @@ function Live({
                 type="checkbox"
                 checked={sameAsDelivery}
                 onChange={(event) => {
-                  setSameAsDelivery(event.target.checked)
-                  if (event.target.checked && selected) {
-                    void setAddress({ shippingAddressId: selected.id })
-                  }
+                  const same = event.target.checked
+                  setSameAsDelivery(same)
+                  setBillingChoice('')
+                  // Ticking it puts billing back on the delivery address; the
+                  // server does that itself when billing is omitted.
+                  if (same && selected) void setAddress({ shippingAddressId: selected.id })
                 }}
                 className="size-4"
               />
               Same as delivery
             </label>
+
+            {/*
+              A dropdown here, a list above. The delivery address is the
+              decision of this page and deserves the room; billing is a
+              formality almost nobody changes, and giving it an equally loud
+              control would make the two look like equal questions.
+            */}
             {!sameAsDelivery && (
-              <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                {rows.map((address) => (
-                  <button
-                    key={address.id}
-                    type="button"
-                    onClick={() =>
-                      selected &&
-                      void setAddress({ shippingAddressId: selected.id, billingAddressId: address.id })
-                    }
-                    className={cn(
-                      'border p-4 text-left text-sm transition-colors',
-                      session.billingAddress?.id === address.id
-                        ? 'border-foreground'
-                        : 'hover:border-foreground/40',
-                    )}
+              <div className="mt-4 space-y-4">
+                <div>
+                  <Label htmlFor="billing-address">Saved addresses</Label>
+                  <Select
+                    id="billing-address"
+                    className="mt-1.5"
+                    value={billingChoice}
+                    disabled={isSettingAddress}
+                    onChange={(event) => void chooseBilling(event.target.value)}
                   >
-                    <AddressLines address={address} />
-                  </button>
-                ))}
+                    {/* Nothing is preselected: the customer unticked the box
+                        precisely because the delivery address is not the
+                        answer, so defaulting back to it would be ignoring
+                        what they just said. */}
+                    <option value="">Select an address</option>
+                    {rows.map((address) => (
+                      <option key={address.id} value={address.id}>
+                        {address.fullName} — {addressSummary(address)}
+                      </option>
+                    ))}
+                    <option value="new">Use a new address</option>
+                  </Select>
+                </div>
+
+                {billingChoice === 'new' && (
+                  <div className="border p-5">
+                    <AddressForm
+                      onSubmit={saveBillingAddress}
+                      onCancel={() => setBillingChoice('')}
+                      submitLabel="Use this address"
+                    />
+                  </div>
+                )}
+
+                {/* What was actually chosen, read back. A select showing a
+                    truncated line is not a confirmation. */}
+                {billingSettled && session.billingAddress && (
+                  <div className="border p-4">
+                    <p className="text-sm">{session.billingAddress.fullName}</p>
+                    <p className="text-muted-foreground mt-0.5 text-xs leading-relaxed">
+                      {addressSummary(session.billingAddress)}
+                      <span className="px-1.5" aria-hidden>
+                        ·
+                      </span>
+                      <span className="tabular-nums">{session.billingAddress.phone}</span>
+                    </p>
+                  </div>
+                )}
               </div>
             )}
           </section>
@@ -360,16 +522,19 @@ function Live({
             variant="accent"
             size="lg"
             className="mt-5 w-full"
-            disabled={paying || blocked || expiredByClock || !selected}
+            disabled={paying || blocked || expiredByClock || !selected || !billingSettled}
             onClick={() => void pay()}
           >
             {paying && <Spinner />}
             {paying ? 'Confirming your payment…' : `Pay ${formatMoney(session.totalAmount)}`}
           </Button>
 
-          {!selected && (
+          {/* One reason at a time, in the order the page asks for them. */}
+          {!selected ? (
             <p className="text-muted-foreground mt-2 text-xs">Choose a delivery address first.</p>
-          )}
+          ) : !billingSettled ? (
+            <p className="text-muted-foreground mt-2 text-xs">Choose a billing address first.</p>
+          ) : null}
 
           <button
             type="button"
@@ -382,6 +547,21 @@ function Live({
         </aside>
       </div>
     </div>
+  )
+}
+
+/** The dot, drawn rather than an <input type="radio"> — the row is the control. */
+function Radio({ checked }: { checked: boolean }) {
+  return (
+    <span
+      aria-hidden
+      className={cn(
+        'flex size-4 shrink-0 items-center justify-center rounded-full border',
+        checked && 'border-foreground',
+      )}
+    >
+      {checked && <span className="bg-foreground size-1.5 rounded-full" />}
+    </span>
   )
 }
 

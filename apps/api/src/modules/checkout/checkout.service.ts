@@ -11,6 +11,11 @@ import {
   type CheckoutSessionRecord,
   type ShopCheckoutPayload,
 } from '../../serializers/shop/checkout.serializer.js'
+import {
+  quoteMethods,
+  rateFor,
+  type ShippingMethodCode,
+} from './shipping.methods.js'
 import type { CreateCheckoutInput } from '../../schemas/shop/checkout.schema.js'
 
 /**
@@ -59,6 +64,32 @@ async function load(id: string): Promise<CheckoutSessionRecord> {
   const session = await prisma.checkoutSession.findUnique({ where: { id }, include: sessionInclude })
   if (!session) throw notFound('Checkout')
   return session
+}
+
+/**
+ * The goods total the quote was built on: subtotal less every discount, per-line
+ * and order-wide. Recomputed from the same rows rather than stored, so the
+ * shipping options are priced against exactly the figure `quoteSession` used.
+ */
+function goodsTotalOf(session: CheckoutSessionRecord): Prisma.Decimal {
+  const itemDiscount = session.items.reduce(
+    (running, item) => running.plus(item.discountAmount),
+    new Prisma.Decimal(0),
+  )
+  return session.subtotal.minus(itemDiscount).minus(session.discountAmount)
+}
+
+/**
+ * Load and serialize — the one way a session leaves this module.
+ *
+ * The shipping options are attached here rather than in the serializer because
+ * pricing them needs the settings row, and a serializer that reaches for the
+ * database is a serializer that runs a query per response it renders.
+ */
+async function present(id: string): Promise<ShopCheckoutPayload> {
+  const session = await load(id)
+  const settings = await prisma.storeSettings.findUnique({ where: { id: 'store' } })
+  return serializeCheckoutSession(session, quoteMethods(goodsTotalOf(session), settings))
 }
 
 /**
@@ -275,9 +306,10 @@ function optionSnapshot(
 }
 
 /**
- * Shipping: one flat rate, waived above a threshold, both from the single
- * settings row. Computed here and nowhere else — a shipping figure the client
- * could compute is a shipping figure the client could disagree with (§21).
+ * Shipping: the rate for the service the customer chose, from the static method
+ * table and the single settings row. Computed here and nowhere else — a
+ * shipping figure the client could compute is a shipping figure the client
+ * could disagree with (§21).
  *
  * The threshold is tested against the *discounted* goods total, not the raw
  * subtotal. It reads the same today, when nothing discounts anything, and it is
@@ -286,13 +318,10 @@ function optionSnapshot(
 async function quoteShipping(
   tx: Prisma.TransactionClient,
   goodsTotal: Prisma.Decimal,
+  method: string,
 ): Promise<Prisma.Decimal> {
   const settings = await tx.storeSettings.findUnique({ where: { id: 'store' } })
-  if (!settings) return new Prisma.Decimal(0)
-
-  const threshold = settings.freeShippingThreshold
-  if (threshold && goodsTotal.greaterThanOrEqualTo(threshold)) return new Prisma.Decimal(0)
-  return settings.shippingFlatRate
+  return rateFor(method, goodsTotal, settings)
 }
 
 /**
@@ -308,7 +337,7 @@ async function quoteShipping(
  *   subtotal       = Σ line totals
  *   item_discount  = Σ per-line discounts        ← coupons, in the discount phase
  *   order_discount = cart-wide, capped at (subtotal − item_discount)
- *   shipping       = flat rate, waived above the threshold
+ *   shipping       = the chosen method's rate, waived above the threshold
  *   total          = subtotal − discounts + shipping
  *
  * The two discount steps are zero today by decision, not by oversight: coupons
@@ -332,7 +361,7 @@ async function quoteSession(tx: Prisma.TransactionClient, sessionId: string) {
   // must not be the thing that quietly discards it.
   const session = await tx.checkoutSession.findUniqueOrThrow({
     where: { id: sessionId },
-    select: { discountAmount: true },
+    select: { discountAmount: true, shippingMethod: true },
   })
 
   // Capped so no discount can drive a total below its shipping, which is the
@@ -343,7 +372,7 @@ async function quoteSession(tx: Prisma.TransactionClient, sessionId: string) {
     : session.discountAmount
 
   const goodsTotal = ceiling.minus(orderDiscount)
-  const shipping = await quoteShipping(tx, goodsTotal)
+  const shipping = await quoteShipping(tx, goodsTotal, session.shippingMethod)
 
   return tx.checkoutSession.update({
     where: { id: sessionId },
@@ -444,7 +473,7 @@ export async function create(
         },
       })
     }
-    return serializeCheckoutSession(await load(open.id))
+    return present(open.id)
   }
 
   try {
@@ -598,7 +627,7 @@ async function createSession(
     return session.id
   })
 
-  return serializeCheckoutSession(await load(sessionId))
+  return present(sessionId)
 }
 
 /**
@@ -660,7 +689,7 @@ export async function findById(userId: string, id: string): Promise<ShopCheckout
     await expireIfDue(id)
   }
 
-  return serializeCheckoutSession(await load(id))
+  return present(id)
 }
 
 /**
@@ -687,7 +716,7 @@ export async function findActive(userId: string): Promise<ShopCheckoutPayload | 
     return null
   }
 
-  return serializeCheckoutSession(await load(open.id))
+  return present(open.id)
 }
 
 // ─── addresses on a session ──────────────────────────────────────────────────
@@ -731,7 +760,37 @@ export async function setAddresses(
     await quoteSession(tx, id)
   })
 
-  return serializeCheckoutSession(await load(id))
+  return present(id)
+}
+
+// ─── shipping method ─────────────────────────────────────────────────────────
+
+/**
+ * Which delivery service, then a re-quote — the same shape as setting an
+ * address, and for the same reason: the customer changed the order, so the
+ * order gets priced again.
+ *
+ * The body carries a *code*, never a rate. That is the whole point of the
+ * endpoint: the client says "express" and the server says what express costs,
+ * so a tampered request can pick a slower van but never a cheaper bill (§21).
+ *
+ * `editableOrThrow` is what stops this landing on a session that is already
+ * paying. Changing the shipping charge under a payment the provider is holding
+ * is how the customer is charged one total and shown another (§10).
+ */
+export async function setShippingMethod(
+  userId: string,
+  id: string,
+  method: ShippingMethodCode,
+): Promise<ShopCheckoutPayload> {
+  await editableOrThrow(userId, id)
+
+  await prisma.$transaction(async (tx) => {
+    await tx.checkoutSession.update({ where: { id }, data: { shippingMethod: method } })
+    await quoteSession(tx, id)
+  })
+
+  return present(id)
 }
 
 // ─── cancel ──────────────────────────────────────────────────────────────────

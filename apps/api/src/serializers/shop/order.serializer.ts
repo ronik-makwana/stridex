@@ -1,5 +1,6 @@
 import type { Prisma } from '@shoe/db'
 import { money } from './money.js'
+import { labelFor } from '../../modules/checkout/shipping.methods.js'
 
 /**
  * An order, as the customer who placed it sees it.
@@ -58,6 +59,8 @@ export function serializeShopOrder(order: ShopOrderRecord) {
     subtotal: money(order.subtotal),
     discountAmount: money(order.discountAmount),
     shippingAmount: money(order.shippingAmount),
+    /** The service that was paid for, resolved to its label. */
+    shippingMethod: labelFor(order.shippingMethod),
     // No tax row. `orders.tax_amount` exists, is written zero, and is never
     // rendered — see the 15.0 migration.
     totalAmount: money(order.totalAmount),
