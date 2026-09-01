@@ -397,15 +397,80 @@ export async function create(
 
   const addresses = await resolveAddresses(userId, input)
 
-  const sessionId = await prisma.$transaction(async (tx) => {
-    // Any ACTIVE session this customer still has is replaced, not stacked. Two
-    // open checkouts hold the same stock twice, and the cart has moved on.
-    const open = await tx.checkoutSession.findMany({
-      where: { userId, status: 'ACTIVE' },
-      select: { id: true },
-    })
-    for (const previous of open) await releaseSession(tx, previous.id, 'CANCELLED')
+  /**
+   * One live checkout at a time, and a second attempt is refused rather than
+   * quietly replacing the first.
+   *
+   * Replacing was the earlier behaviour and it hid something the customer
+   * should be told: stock is being held for them right now, on a clock. Cancel
+   * it silently and they lose minutes they did not know they had; do it while
+   * another tab is mid-payment and it is worse. So the answer is a 409 naming
+   * the session, and the client offers the two things that actually resolve it
+   * — finish it, or cancel it.
+   *
+   * The exception is the same cart. Opening `/checkout` twice for the bag you
+   * already quoted is not a second checkout, it is the same one — a double
+   * click, a re-render, a reopened tab — and that resumes.
+   */
+  const open = await prisma.checkoutSession.findFirst({
+    where: { userId, status: 'ACTIVE', expiresAt: { gt: new Date() } },
+    include: { items: { select: { variantId: true, quantity: true } } },
+    orderBy: { createdAt: 'desc' },
+  })
 
+  if (open) {
+    if (!sameLines(open.items, cart.items)) {
+      throw new AppError(
+        409,
+        'CHECKOUT_IN_PROGRESS',
+        'You already have a checkout in progress',
+        {
+          reason: 'Finish it, or cancel it to start a new one with your updated cart.',
+          // The id, so the client can link straight to it rather than making
+          // the customer go and find it.
+          fields: { checkoutSessionId: open.id },
+        },
+      )
+    }
+
+    // Addresses supplied with this call still apply — the caller may be
+    // resuming with a delivery address chosen since.
+    if (addresses.shippingAddressId || addresses.billingAddressId) {
+      await prisma.checkoutSession.update({
+        where: { id: open.id },
+        data: {
+          ...(addresses.shippingAddressId ? { shippingAddressId: addresses.shippingAddressId } : {}),
+          ...(addresses.billingAddressId ? { billingAddressId: addresses.billingAddressId } : {}),
+        },
+      })
+    }
+    return serializeCheckoutSession(await load(open.id))
+  }
+
+  try {
+    return await createSession(userId, cart, addresses)
+  } catch (error) {
+    /**
+     * `checkout_sessions_one_active_per_user_idx` fired: another request for
+     * this customer created a session in the microseconds since the check
+     * above. That request is not a competitor — it is the same customer's
+     * double click — so the loser is handed the winner's session rather than an
+     * error about a constraint it never knew existed.
+     */
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+      const winner = await findActive(userId)
+      if (winner) return winner
+    }
+    throw error
+  }
+}
+
+async function createSession(
+  userId: string,
+  cart: { items: Prisma.CartItemGetPayload<{ include: typeof cartInclude }>[] },
+  addresses: { shippingAddressId: string | null; billingAddressId: string | null },
+): Promise<ShopCheckoutPayload> {
+  const sessionId = await prisma.$transaction(async (tx) => {
     // ── 1. validate every line, collecting all of it ────────────────────────
     const failures: LineFailure[] = []
 
@@ -536,6 +601,20 @@ export async function create(
   return serializeCheckoutSession(await load(sessionId))
 }
 
+/**
+ * Whether a session still quotes the cart in front of us. Variant and quantity
+ * only: those are what was reserved and what was priced, and anything else that
+ * changed about the cart did not change the quote.
+ */
+function sameLines(
+  sessionItems: { variantId: string; quantity: number }[],
+  cartItems: { variantId: string; quantity: number }[],
+): boolean {
+  if (sessionItems.length !== cartItems.length) return false
+  const held = new Map(sessionItems.map((item) => [item.variantId, item.quantity]))
+  return cartItems.every((item) => held.get(item.variantId) === item.quantity)
+}
+
 /** Owner-scoped, like everything else a customer owns: not yours is a 404 (§22). */
 async function resolveAddresses(userId: string, input: CreateCheckoutInput) {
   const wanted = [input.shippingAddressId, input.billingAddressId].filter(
@@ -582,6 +661,33 @@ export async function findById(userId: string, id: string): Promise<ShopCheckout
   }
 
   return serializeCheckoutSession(await load(id))
+}
+
+/**
+ * The session this customer already has open, if any.
+ *
+ * Without it a checkout is only reachable by an id the client already holds —
+ * which the cart does not, so a customer who backs out has no way to learn that
+ * one exists or that stock is being held for them. This is what makes "you have
+ * a checkout in progress" possible on the cart page.
+ *
+ * Anything past its deadline is expired here first, so this can never advertise
+ * a session that is holding nothing (§24).
+ */
+export async function findActive(userId: string): Promise<ShopCheckoutPayload | null> {
+  const open = await prisma.checkoutSession.findFirst({
+    where: { userId, status: { in: ['ACTIVE', 'PAYMENT_PENDING'] } },
+    orderBy: { createdAt: 'desc' },
+    select: { id: true, status: true, expiresAt: true },
+  })
+  if (!open) return null
+
+  if (open.status === 'ACTIVE' && open.expiresAt <= new Date()) {
+    await expireIfDue(open.id)
+    return null
+  }
+
+  return serializeCheckoutSession(await load(open.id))
 }
 
 // ─── addresses on a session ──────────────────────────────────────────────────

@@ -13,6 +13,12 @@ export const checkoutApi = {
   /** Refresh, back button, second tab. Creates nothing. */
   get: (id: string) => get<CheckoutSession>(`/checkout/${id}`),
 
+  /**
+   * "Do I have one open?" — the cart's only way to know that a checkout exists
+   * and that stock is being held for it. Null when there is none.
+   */
+  active: () => get<CheckoutSession | null>('/checkout/active'),
+
   setAddress: (id: string, shippingAddressId: string, billingAddressId?: string) =>
     post<CheckoutSession>(`/checkout/${id}/address`, { shippingAddressId, billingAddressId }),
 

@@ -24,6 +24,17 @@ export const create: RequestHandler = async (req, res) => {
 }
 
 /**
+ * "Do I have one open?" — answered with the whole session or `null`.
+ *
+ * The cart asks this on every load, which is the only way a customer who
+ * pressed Back can be told that a checkout exists and that their size is being
+ * held for it.
+ */
+export const getActive: RequestHandler = async (req, res) => {
+  res.status(200).json({ data: await checkout.findActive(ownerId(req)) })
+}
+
+/**
  * Refresh, back button, a tab reopened an hour later — all of them land here,
  * and none of them creates anything (§26, §27).
  */

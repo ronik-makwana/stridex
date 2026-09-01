@@ -2,6 +2,7 @@ import * as React from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useSearchParams } from 'react-router'
 import { ApiError } from '@/lib/api-client'
+import { useAuth } from '@/lib/auth'
 import { cartKeys } from '@/features/cart/use-cart'
 import type { CheckoutSession } from '@/types/api'
 import { checkoutApi } from './api'
@@ -18,6 +19,7 @@ import { checkoutApi } from './api'
 export const checkoutKeys = {
   all: ['checkout'] as const,
   session: (id: string) => [...checkoutKeys.all, id] as const,
+  active: () => [...checkoutKeys.all, 'active'] as const,
 }
 
 /** How often to re-read while the provider is deciding. */
@@ -57,15 +59,24 @@ export function useCheckoutSession() {
     retry: false,
   })
 
-  // Arrived without a session: make one, and put its id in the URL by replacing
-  // the entry, so Back goes to the cart rather than to a bare /checkout that
-  // would create a second session.
+  /**
+   * Arrived without a session id.
+   *
+   * Ask for an open one before making a new one — the customer may have pressed
+   * Back, opened a second tab, or followed the cart's Checkout button while a
+   * session was already live. Creating in that case is refused by the API
+   * anyway; asking first turns a 409 into a resume.
+   *
+   * The id then replaces the history entry rather than pushing one, so Back
+   * goes to the cart rather than to a bare /checkout.
+   */
   React.useEffect(() => {
     if (sessionId || creating) return
     let cancelled = false
     setCreating(true)
     checkoutApi
-      .create()
+      .active()
+      .then((existing) => existing ?? checkoutApi.create())
       .then((session) => {
         if (cancelled) return
         queryClient.setQueryData(checkoutKeys.session(session.id), session)
@@ -147,4 +158,40 @@ export function useCountdown(expiresAt: string | undefined): { text: string; exp
   const minutes = Math.floor(remaining / 60_000)
   const seconds = Math.floor((remaining % 60_000) / 1_000)
   return { text: `${minutes}:${String(seconds).padStart(2, '0')}`, expired: false }
+}
+
+/**
+ * The checkout this customer already has open, for the cart to offer back to
+ * them. A customer who pressed Back has no other way to find it — and no other
+ * way to learn that their size is being held.
+ */
+export function useActiveCheckout() {
+  const { isAuthenticated } = useAuth()
+  const queryClient = useQueryClient()
+
+  const query = useQuery({
+    queryKey: checkoutKeys.active(),
+    queryFn: () => checkoutApi.active(),
+    enabled: isAuthenticated,
+    // A session expires on its own clock, so a cached answer goes stale
+    // quietly. Re-read whenever the cart is looked at.
+    staleTime: 0,
+    retry: false,
+  })
+
+  const cancel = useMutation({
+    mutationFn: (id: string) => checkoutApi.cancel(id),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: checkoutKeys.all })
+      // The items are back on the shelf, so what the cart can offer changed.
+      void queryClient.invalidateQueries({ queryKey: cartKeys.all })
+    },
+  })
+
+  return {
+    session: query.data ?? null,
+    isLoading: query.isPending && query.fetchStatus !== 'idle',
+    cancel: cancel.mutateAsync,
+    isCancelling: cancel.isPending,
+  }
 }

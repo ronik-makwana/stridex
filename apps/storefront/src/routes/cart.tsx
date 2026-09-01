@@ -1,9 +1,10 @@
 import * as React from 'react'
 import { Link } from 'react-router'
 import { toast } from 'sonner'
-import { Heart, ShoppingBag } from 'lucide-react'
+import { Clock, Heart, ShoppingBag } from 'lucide-react'
 import { useCart } from '@/features/cart/use-cart'
 import { CHECKOUT_PATH, canCheckout } from '@/features/cart/checkout'
+import { useActiveCheckout, useCountdown } from '@/features/checkout/use-checkout'
 import { useWishlist } from '@/features/wishlist/use-wishlist'
 import { CartLineRow } from '@/components/cart-line-row'
 import { Button } from '@/components/ui/button'
@@ -99,6 +100,8 @@ export default function CartPage() {
         </Link>
       </div>
 
+      <ResumeCheckout />
+
       <div className="mt-8 grid gap-10 lg:grid-cols-[minmax(0,1fr)_20rem]">
         <div className="divide-y border-t">
           {items.map((line) => (
@@ -132,9 +135,7 @@ export default function CartPage() {
             auth wall sits. Disabled while every line is unbuyable, because a
             checkout with nothing to sell is a dead end with a redirect.
           */}
-          <Button asChild variant="accent" size="lg" className="mt-5 w-full" disabled={!canCheckout(cart)}>
-            <Link to={CHECKOUT_PATH}>Checkout</Link>
-          </Button>
+          <CheckoutButton disabled={!canCheckout(cart)} />
 
           <button
             type="button"
@@ -148,5 +149,95 @@ export default function CartPage() {
         </aside>
       </div>
     </div>
+  )
+}
+
+/**
+ * The bridge back to a checkout somebody walked away from.
+ *
+ * Without it a session is only reachable by an id the cart never had: pressing
+ * Back left the customer with no way to return to it, and — worse — no way to
+ * know that their size was being held at all. Starting a fresh checkout works,
+ * but it re-reads prices and restarts the clock, and neither is what somebody
+ * who stepped away for thirty seconds wanted.
+ */
+function ResumeCheckout() {
+  const { session, cancel, isCancelling } = useActiveCheckout()
+  const countdown = useCountdown(session?.expiresAt)
+
+  // A payment already in flight is not something to resume or cancel — the
+  // checkout page itself is watching for the provider's answer.
+  if (!session || session.status !== 'ACTIVE' || countdown.expired) return null
+
+  const cancelCheckout = async () => {
+    try {
+      await cancel(session.id)
+      toast.success('Checkout cancelled — the items are back on the shelf')
+    } catch (error) {
+      toast.error(error instanceof ApiError ? error.message : 'Could not cancel that checkout')
+    }
+  }
+
+  return (
+    <div className="mt-6 flex flex-wrap items-center justify-between gap-3 border px-4 py-3">
+      <p className="flex items-center gap-2 text-sm">
+        <Clock className="size-4 shrink-0" />
+        <span>
+          You have a checkout in progress — these items are held for{' '}
+          <span className="tabular-nums">{countdown.text}</span>.
+        </span>
+      </p>
+      <div className="flex items-center gap-3">
+        <Button asChild size="sm" variant="accent">
+          {/* Straight back to the session that exists, not a new one. */}
+          <Link to={`${CHECKOUT_PATH}?s=${session.id}`}>Resume checkout</Link>
+        </Button>
+        <button
+          type="button"
+          onClick={() => void cancelCheckout()}
+          disabled={isCancelling}
+          className="text-muted-foreground hover:text-foreground text-sm underline underline-offset-4 disabled:opacity-40"
+        >
+          Cancel and free the items
+        </button>
+      </div>
+    </div>
+  )
+}
+
+/**
+ * Disabled while a checkout is already open, and it stays a *button* rather
+ * than becoming a link to the live session.
+ *
+ * Two reasons. The API refuses a second checkout, so an enabled button here
+ * would be an invitation to an error. And there is exactly one place to act on
+ * the session that exists — the banner at the top of this page, which offers
+ * both things worth doing — so a second, competing control beside the subtotal
+ * would just be a third way to ask the same question.
+ *
+ * `asChild` with `disabled` only styles the link; a real button is the only
+ * thing that actually cannot be clicked through.
+ */
+function CheckoutButton({ disabled }: { disabled: boolean }) {
+  const { session } = useActiveCheckout()
+  const live = session?.status === 'ACTIVE' ? session : null
+
+  if (live) {
+    return (
+      <>
+        <Button variant="accent" size="lg" className="mt-5 w-full" disabled>
+          Checkout
+        </Button>
+        <p className="text-muted-foreground mt-2 text-xs">
+          A checkout is already in progress. Resume or cancel it above to start a new one.
+        </p>
+      </>
+    )
+  }
+
+  return (
+    <Button asChild variant="accent" size="lg" className="mt-5 w-full" disabled={disabled}>
+      <Link to={CHECKOUT_PATH}>Checkout</Link>
+    </Button>
   )
 }

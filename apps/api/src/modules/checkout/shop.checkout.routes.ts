@@ -23,6 +23,10 @@ shopCheckoutRouter.use(authenticate, requireCustomerSession)
 
 shopCheckoutRouter.post('/', validate({ body: createCheckoutSchema }), controller.create)
 
+// Before `/:id`, or Express reads 'active' as an id and the uuid schema
+// rejects it with a 400.
+shopCheckoutRouter.get('/active', controller.getActive)
+
 shopCheckoutRouter.get('/:id', validate({ params: shopUuidParamSchema }), controller.getOne)
 
 shopCheckoutRouter.post(
