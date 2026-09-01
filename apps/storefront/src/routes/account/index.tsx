@@ -1,6 +1,6 @@
 import * as React from 'react'
-import { useNavigate } from 'react-router'
-import { MailWarning } from 'lucide-react'
+import { Link, useNavigate } from 'react-router'
+import { ChevronRight, MailWarning } from 'lucide-react'
 import { toast } from 'sonner'
 import { useAuth } from '@/lib/auth'
 import { authApi } from '@/features/auth/api'
@@ -68,6 +68,21 @@ export default function AccountPage() {
         <Row label="Mobile" value={user.phone ?? 'Not added'} />
         <Row label="Member since" value={formatDate(user.createdAt)} />
       </dl>
+
+      {/*
+        The account's other screens as they arrive. One link today rather than a
+        sub-nav of three, two of which would go nowhere — orders and profile
+        land with phase 16.
+      */}
+      <nav className="mt-8 border-y">
+        <Link
+          to="/account/addresses"
+          className="hover:bg-secondary/60 flex items-center justify-between px-1 py-3.5 transition-colors"
+        >
+          <span className="text-sm">Addresses</span>
+          <ChevronRight className="text-muted-foreground size-4" />
+        </Link>
+      </nav>
 
       <Button variant="outline" className="mt-8" onClick={signOut}>
         Sign out

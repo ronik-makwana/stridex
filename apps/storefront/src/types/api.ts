@@ -264,6 +264,29 @@ export type Suggestion = {
   }[]
   categories: Ref[]
 }
+// ─── addresses ───────────────────────────────────────────────────────────────
+
+/**
+ * A saved delivery address. Never the one an order shipped to — placing an
+ * order copies it into its own table, so editing this later cannot rewrite
+ * where a past parcel went.
+ */
+export type Address = {
+  id: string
+  fullName: string
+  phone: string
+  addressLine1: string
+  addressLine2: string | null
+  city: string
+  state: string
+  country: string
+  postalCode: string
+  /** Exactly one per customer. The API keeps it that way, not the client. */
+  isDefault: boolean
+  createdAt: string
+  updatedAt: string
+}
+
 // ─── cart and wishlist ───────────────────────────────────────────────────────
 
 /**

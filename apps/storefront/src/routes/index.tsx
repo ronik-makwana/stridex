@@ -17,6 +17,7 @@ import ForgotPasswordPage from './auth/forgot-password'
 import ResetPasswordPage from './auth/reset-password'
 import VerifyEmailPage from './auth/verify-email'
 import AccountPage from './account'
+import AddressesPage from './account/addresses'
 
 /**
  * Route tree per `shoe-storefront-final-spec.md` §3.15. Only the Phase 11 paths
@@ -52,6 +53,9 @@ export const router = createBrowserRouter([
         element: <RequireAuth />,
         children: [
           { path: 'account', element: <AccountPage /> },
+          // Pulled forward from phase 16: checkout needs saved addresses to
+          // choose from, and a customer needs somewhere to have saved them.
+          { path: 'account/addresses', element: <AddressesPage /> },
           // Phase 15: /checkout   Phase 16: /account/orders, /account/addresses
         ],
       },
