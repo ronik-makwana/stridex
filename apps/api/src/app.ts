@@ -8,6 +8,7 @@ import { logger } from './lib/logger.js'
 import { globalLimiter } from './middleware/rateLimit.js'
 import { errorHandler, notFoundHandler } from './middleware/errorHandler.js'
 import { adminRouter } from './routes/admin.routes.js'
+import { shopRouter } from './routes/shop.routes.js'
 
 export function createApp(): Express {
   const app = express()
@@ -60,7 +61,7 @@ export function createApp(): Express {
   })
 
   app.use('/api/admin', adminRouter)
-  // app.use('/api/storefront', shopRouter)   ← Part C
+  app.use('/api/storefront', shopRouter)
 
   app.use(notFoundHandler)
   app.use(errorHandler)

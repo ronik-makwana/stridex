@@ -1,0 +1,146 @@
+@import "tailwindcss";
+
+/*
+ * StrideX storefront tokens. Editorial minimal: white ground, near-black text,
+ * one accent held back for sale prices and the highest-intent CTAs.
+ *
+ * These are NOT apps/admin's tokens and must never be synced with them. Admin
+ * is a dense tool in slate; this is a shop in paper white. Same shadcn
+ * primitives, different values, separate installs — that is the deal
+ * repo-structure.md makes.
+ */
+:root {
+  /* Small, not round. Editorial layouts read as printed, and a 10px radius on
+     everything is the single fastest way to make a store look like a dashboard. */
+  --radius: 0.25rem;
+
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.17 0.004 285);
+
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.17 0.004 285);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.17 0.004 285);
+
+  /* Primary is the near-black, and it carries almost every button in the app.
+     Reaching for the accent here is what makes the accent stop meaning
+     anything. */
+  --primary: oklch(0.17 0.004 285);
+  --primary-foreground: oklch(1 0 0);
+
+  --secondary: oklch(0.968 0.002 285);
+  --secondary-foreground: oklch(0.17 0.004 285);
+
+  --muted: oklch(0.968 0.002 285);
+  --muted-foreground: oklch(0.52 0.008 285);
+
+  /*
+   * The one accent. Its budget for the whole storefront is: sale prices, the
+   * discount pill, and the single highest-intent CTA on a screen (Add to bag,
+   * Pay). It is deliberately not a hover colour, not a link colour, and not a
+   * focus ring — the moment it becomes those, a red price stops reading as a
+   * markdown and starts reading as decoration.
+   */
+  --accent: oklch(0.55 0.196 27.5);
+  --accent-foreground: oklch(1 0 0);
+
+  /* Distinct from --accent on purpose. A form error and a sale price must never
+     be the same red, or the customer learns to ignore one of them. */
+  --destructive: oklch(0.51 0.19 25.5);
+  --destructive-foreground: oklch(1 0 0);
+
+  --success: oklch(0.52 0.13 155);
+  --success-foreground: oklch(1 0 0);
+
+  /* Hairlines. The shell's header border and every divider read as printed
+     rules, so they sit lighter than a dashboard's would. */
+  --border: oklch(0.918 0.003 285);
+  --input: oklch(0.878 0.004 285);
+  --ring: oklch(0.17 0.004 285);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --radius-sm: calc(var(--radius) - 2px);
+  --radius-md: var(--radius);
+  --radius-lg: calc(var(--radius) + 2px);
+
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, sans-serif;
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-feature-settings: "rlig" 1, "calt" 1;
+  }
+
+  /*
+   * Editorial type: headings sit tight and dark, body copy stays quiet. Set
+   * once here rather than repeated as `tracking-tight` on every h1 in the app.
+   */
+  h1, h2, h3 {
+    @apply font-medium tracking-tight text-balance;
+  }
+
+  /* Keyboard focus is visible everywhere; a mouse click is not ringed. Never
+     remove this — hiding a control is not access control (§22), and neither is
+     hiding where the keyboard is. */
+  :focus-visible {
+    @apply outline-ring outline-2 outline-offset-2;
+  }
+}
+
+/*
+ * The wordmark. Wide-tracked uppercase is the whole brand expression in an
+ * editorial-minimal shell, so it is a utility rather than four classes repeated
+ * across the header, the footer and the auth card.
+ */
+@utility wordmark {
+  @apply font-semibold uppercase;
+  letter-spacing: 0.18em;
+}
+
+/*
+ * Radix mounts and unmounts with `data-state`, so overlays and panels need real
+ * keyframes to animate out. `tw-animate-css` is not installed; these are what
+ * the dialog and drawer primitives actually use.
+ */
+@keyframes shop-fade-in { from { opacity: 0 } to { opacity: 1 } }
+@keyframes shop-fade-out { from { opacity: 1 } to { opacity: 0 } }
+@keyframes shop-slide-in-right { from { transform: translateX(100%) } to { transform: translateX(0) } }
+@keyframes shop-slide-out-right { from { transform: translateX(0) } to { transform: translateX(100%) } }
+@keyframes shop-slide-in-left { from { transform: translateX(-100%) } to { transform: translateX(0) } }
+@keyframes shop-slide-out-left { from { transform: translateX(0) } to { transform: translateX(-100%) } }
+
+@utility animate-overlay-in { animation: shop-fade-in 160ms ease-out }
+@utility animate-overlay-out { animation: shop-fade-out 140ms ease-in }
+@utility animate-drawer-in-right { animation: shop-slide-in-right 260ms cubic-bezier(0.32, 0.72, 0, 1) }
+@utility animate-drawer-out-right { animation: shop-slide-out-right 200ms cubic-bezier(0.32, 0.72, 0, 1) }
+@utility animate-drawer-in-left { animation: shop-slide-in-left 260ms cubic-bezier(0.32, 0.72, 0, 1) }
+@utility animate-drawer-out-left { animation: shop-slide-out-left 200ms cubic-bezier(0.32, 0.72, 0, 1) }

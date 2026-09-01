@@ -121,6 +121,7 @@ model User {
 
   sessions             UserSession[]
   passwordResetTokens  PasswordResetToken[]
+  emailVerificationTokens EmailVerificationToken[]
   addresses            Address[]
   cart                 Cart?
   wishlist             Wishlist?
@@ -167,6 +168,24 @@ model PasswordResetToken {
 
   @@index([userId, createdAt])
   @@map("password_reset_tokens")
+}
+
+// Same shape as PasswordResetToken and deliberately not merged with it behind a
+// `purpose` column: the two have different lifetimes, and one table would mean
+// every reset lookup carries a filter that a missed WHERE turns into a
+// verification link that resets a password.
+model EmailVerificationToken {
+  id        String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
+  tokenHash String    @unique @map("token_hash")
+  expiresAt DateTime  @map("expires_at") @db.Timestamptz(6)
+  usedAt    DateTime? @map("used_at") @db.Timestamptz(6)
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@map("email_verification_tokens")
 }
 
 model Address {

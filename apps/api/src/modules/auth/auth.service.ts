@@ -1,7 +1,7 @@
 import argon2 from 'argon2'
-import type { User, UserRole } from '@shoe/db'
+import { Prisma, type User, type UserRole } from '@shoe/db'
 import { prisma } from '../../lib/prisma.js'
-import { forbidden, invalidCredentials, unauthorized } from '../../lib/errors.js'
+import { conflict, forbidden, invalidCredentials, unauthorized } from '../../lib/errors.js'
 import { logger } from '../../lib/logger.js'
 import {
   REFRESH_TOKEN_MS,
@@ -95,6 +95,19 @@ export async function login(
     })
   }
 
+  return { user, tokens: await startSession(user, context) }
+}
+
+/**
+ * Mints a session row and the token pair that belongs to it. Extracted so
+ * `login` and `register` cannot drift: a register path that forgot to hash the
+ * refresh token would leave a placeholder in `refresh_token_hash` and every
+ * refresh for that customer would read as token reuse.
+ */
+async function startSession(
+  user: Pick<User, 'id' | 'email' | 'role'>,
+  context: SessionContext,
+): Promise<TokenPair> {
   const session = await prisma.userSession.create({
     data: {
       userId: user.id,
@@ -114,7 +127,7 @@ export async function login(
     data: { refreshTokenHash: hashRefreshToken(tokens.refreshToken) },
   })
 
-  return { user, tokens }
+  return tokens
 }
 
 /**
@@ -264,4 +277,153 @@ export async function resetPassword(
       data: { revokedAt: new Date() },
     }),
   ])
+}
+
+// ─── registration ────────────────────────────────────────────────────────────
+
+export type RegisterData = {
+  email: string
+  password: string
+  firstName: string
+  lastName?: string | undefined
+  phone?: string | undefined
+}
+
+/**
+ * Storefront signup. `role` is not a parameter: this function only ever makes
+ * customers. Staff accounts are created from the admin side, and a role that
+ * arrives from a request body is a privilege-escalation bug waiting for one
+ * careless spread.
+ *
+ * A taken email throws 409 rather than returning the same response either way.
+ * That is a deliberate, narrow existence oracle: the non-leaking alternative is
+ * to accept the signup silently and email the real owner, which needs a mailer
+ * this build does not have yet, and which strands a legitimate customer on a
+ * screen that will never resolve. Login, reset and resend — the endpoints an
+ * attacker can hit unattended — all stay silent.
+ */
+export async function register(
+  data: RegisterData,
+  context: SessionContext,
+): Promise<{ user: User; tokens: TokenPair; verificationToken: string }> {
+  const email = data.email.toLowerCase()
+
+  const existing = await prisma.user.findUnique({ where: { email }, select: { id: true } })
+  if (existing) {
+    throw conflict('An account with that email already exists', { email: 'Already registered' })
+  }
+
+  const passwordHash = await hashPassword(data.password)
+
+  let user: User
+  try {
+    user = await prisma.user.create({
+      data: {
+        email,
+        passwordHash,
+        firstName: data.firstName,
+        lastName: data.lastName || null,
+        phone: data.phone || null,
+        role: 'CUSTOMER',
+        status: 'ACTIVE',
+      },
+    })
+  } catch (error) {
+    // Two signups for the same address in the same tick both pass the check
+    // above. The unique index is what actually decides; translate its violation
+    // into the same 409 rather than letting a raw P2002 surface.
+    if (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === 'P2002'
+    ) {
+      throw conflict('An account with that email already exists', { email: 'Already registered' })
+    }
+    throw error
+  }
+
+  // Signed in immediately: Phase 14 merges the guest cart on register as well
+  // as on login, and it needs a session to merge into.
+  const tokens = await startSession(user, context)
+  const verificationToken = await issueEmailVerificationToken(user.id)
+
+  return { user, tokens, verificationToken }
+}
+
+// ─── email verification ──────────────────────────────────────────────────────
+
+const VERIFICATION_TOKEN_MS = 24 * 60 * 60 * 1000
+
+/**
+ * Invalidates any outstanding token before minting a new one, so "resend"
+ * cannot leave three live links in three inboxes. Returns the raw token; only
+ * its SHA-256 is stored, exactly as password reset does.
+ */
+async function issueEmailVerificationToken(userId: string): Promise<string> {
+  const token = randomToken(48)
+  await prisma.$transaction([
+    prisma.emailVerificationToken.updateMany({
+      where: { userId, usedAt: null },
+      data: { usedAt: new Date() },
+    }),
+    prisma.emailVerificationToken.create({
+      data: {
+        userId,
+        tokenHash: sha256(token),
+        expiresAt: new Date(Date.now() + VERIFICATION_TOKEN_MS),
+      },
+    }),
+  ])
+  return token
+}
+
+/**
+ * Resend. Returns null — and the caller still answers 202 — when the address is
+ * unknown, belongs to staff, or is already verified. Unlike register, this
+ * endpoint can be hit unattended, so it must not confirm anything.
+ */
+export async function requestEmailVerification(
+  email: string,
+  allowedRoles: readonly UserRole[],
+): Promise<string | null> {
+  const user = await prisma.user.findUnique({ where: { email: email.toLowerCase() } })
+  if (!user || !allowedRoles.includes(user.role)) return null
+  if (user.status === 'SUSPENDED' || user.emailVerifiedAt) return null
+  return issueEmailVerificationToken(user.id)
+}
+
+/**
+ * Consumes a verification link. Idempotent for the customer who double-clicks:
+ * a token already used inside its window still resolves, because the account is
+ * verified either way and an error screen after a successful verification is
+ * pure confusion. A token that never existed, or has expired, still fails.
+ */
+export async function verifyEmail(
+  token: string,
+  allowedRoles: readonly UserRole[],
+): Promise<User> {
+  const record = await prisma.emailVerificationToken.findUnique({
+    where: { tokenHash: sha256(token) },
+    include: { user: true },
+  })
+
+  if (!record || !allowedRoles.includes(record.user.role)) {
+    throw unauthorized('This verification link is invalid or has expired')
+  }
+  if (record.expiresAt.getTime() <= Date.now()) {
+    throw unauthorized('This verification link is invalid or has expired')
+  }
+  if (record.user.emailVerifiedAt) return record.user
+
+  const [user] = await prisma.$transaction([
+    prisma.user.update({
+      where: { id: record.userId },
+      data: { emailVerifiedAt: new Date() },
+    }),
+    prisma.emailVerificationToken.update({
+      where: { id: record.id },
+      data: { usedAt: new Date() },
+    }),
+  ])
+
+  return user
 }
