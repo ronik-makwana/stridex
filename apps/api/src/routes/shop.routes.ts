@@ -5,6 +5,8 @@ import { shopCollectionsRouter } from '../modules/collections/shop.collections.r
 import { shopAddressesRouter } from '../modules/addresses/shop.addresses.routes.js'
 import { shopCartRouter } from '../modules/cart/shop.cart.routes.js'
 import { shopCheckoutRouter } from '../modules/checkout/shop.checkout.routes.js'
+import { shopAccountRouter } from '../modules/account/shop.account.routes.js'
+import { shopOrdersRouter } from '../modules/orders/shop.orders.routes.js'
 import { shopPaymentsRouter } from '../modules/payments/shop.payments.routes.js'
 import { shopProductsRouter } from '../modules/products/shop.products.routes.js'
 import { shopWishlistRouter } from '../modules/wishlist/shop.wishlist.routes.js'
@@ -54,4 +56,8 @@ shopRouter.use('/checkout', shopCheckoutRouter)
 // Starting a payment is a customer action; confirming one is not. The webhook
 // that does the confirming is mounted outside this router entirely.
 shopRouter.use('/payments', shopPaymentsRouter)
-// Phase 16: /orders, /account        Phase 17: /reviews
+// Your own orders, written by the webhook and read here.
+shopRouter.use('/orders', shopOrdersRouter)
+
+// Editing yourself: the profile and the password. Reading yourself is /auth/me.
+shopRouter.use('/account', shopAccountRouter)

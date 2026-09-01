@@ -2,6 +2,7 @@ import { createBrowserRouter } from 'react-router'
 import { ShopLayout } from '@/layouts/ShopLayout'
 import { AuthLayout } from '@/layouts/AuthLayout'
 import { CheckoutLayout } from '@/layouts/CheckoutLayout'
+import { AccountLayout } from '@/layouts/AccountLayout'
 import { RedirectIfAuthenticated, RequireAuth } from '@/components/require-auth'
 import HomePage from './home'
 import ProductPage from './product'
@@ -18,8 +19,10 @@ import RegisterPage from './auth/register'
 import ForgotPasswordPage from './auth/forgot-password'
 import ResetPasswordPage from './auth/reset-password'
 import VerifyEmailPage from './auth/verify-email'
-import AccountPage from './account'
 import AddressesPage from './account/addresses'
+import OrdersPage from './account/orders'
+import OrderDetailPage from './account/order-detail'
+import ProfilePage from './account/profile'
 
 /**
  * Route tree per `shoe-storefront-final-spec.md` §3.15. Only the Phase 11 paths
@@ -54,10 +57,23 @@ export const router = createBrowserRouter([
       {
         element: <RequireAuth />,
         children: [
-          { path: 'account', element: <AccountPage /> },
-          // Pulled forward from phase 16: checkout needs saved addresses to
-          // choose from, and a customer needs somewhere to have saved them.
-          { path: 'account/addresses', element: <AddressesPage /> },
+          /**
+           * The account is one place with three screens, so it gets a layout
+           * and a sub-nav rather than three unrelated routes. `/account` lands
+           * on the profile — the first thing in the nav, and the screen that
+           * says whose account this is.
+           */
+          {
+            path: 'account',
+            element: <AccountLayout />,
+            children: [
+              { index: true, element: <ProfilePage /> },
+              { path: 'orders', element: <OrdersPage /> },
+              { path: 'orders/:orderNumber', element: <OrderDetailPage /> },
+              { path: 'addresses', element: <AddressesPage /> },
+              { path: 'profile', element: <ProfilePage /> },
+            ],
+          },
           // Phase 15: /checkout   Phase 16: /account/orders, /account/addresses
         ],
       },

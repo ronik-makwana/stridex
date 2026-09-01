@@ -59,7 +59,7 @@ export default function AddressesPage() {
   }
 
   return (
-    <div className="mx-auto max-w-4xl px-4 py-10 sm:px-6">
+    <div>
       <div className="flex flex-wrap items-baseline justify-between gap-3">
         <h1 className="text-xl sm:text-2xl">Addresses</h1>
         {editing === null && rows.length > 0 && (

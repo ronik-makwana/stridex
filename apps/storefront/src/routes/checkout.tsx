@@ -400,15 +400,23 @@ function Row({ label, value, hint }: { label: string; value: string; hint?: stri
 // ─── terminal states ─────────────────────────────────────────────────────────
 
 function Confirmed({ session }: { session: CheckoutSession }) {
+  const orderNumber = session.order?.orderNumber
   return (
     <Terminal
       icon={<Check className="size-8" />}
       title="Order confirmed"
       lines={[
-        `Your order number is ${session.order?.orderNumber ?? '—'}.`,
-        'We have emailed the details. Your order history arrives with the account screens.',
+        `Your order number is ${orderNumber ?? '—'}.`,
+        'We have emailed the details.',
       ]}
-      action={{ to: '/collections', label: 'Continue shopping' }}
+      // Straight to the order rather than to the catalog: what somebody wants
+      // immediately after paying is to see what they just bought.
+      action={
+        orderNumber
+          ? { to: `/account/orders/${orderNumber}`, label: 'View your order' }
+          : { to: '/collections', label: 'Continue shopping' }
+      }
+      secondary={{ to: '/collections', label: 'Continue shopping' }}
     />
   )
 }
@@ -457,11 +465,13 @@ function Terminal({
   title,
   lines,
   action,
+  secondary,
 }: {
   icon: React.ReactNode
   title: string
   lines: string[]
   action: { to: string; label: string }
+  secondary?: { to: string; label: string }
 }) {
   return (
     <div className="mx-auto flex max-w-md flex-col items-center px-4 py-24 text-center">
@@ -472,9 +482,16 @@ function Terminal({
           {line}
         </p>
       ))}
-      <Button asChild variant="accent" className="mt-6">
-        <Link to={action.to}>{action.label}</Link>
-      </Button>
+      <div className="mt-6 flex flex-wrap justify-center gap-3">
+        <Button asChild variant="accent">
+          <Link to={action.to}>{action.label}</Link>
+        </Button>
+        {secondary && (
+          <Button asChild variant="outline">
+            <Link to={secondary.to}>{secondary.label}</Link>
+          </Button>
+        )}
+      </div>
     </div>
   )
 }

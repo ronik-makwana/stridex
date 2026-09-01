@@ -264,6 +264,73 @@ export type Suggestion = {
   }[]
   categories: Ref[]
 }
+// ─── orders ──────────────────────────────────────────────────────────────────
+
+export type OrderStatus = 'PENDING' | 'PROCESSING' | 'SHIPPED' | 'DELIVERED' | 'CANCELLED' | 'REFUNDED'
+export type OrderPaymentStatus = 'PENDING' | 'PAID' | 'PARTIALLY_REFUNDED' | 'REFUNDED' | 'FAILED'
+
+/**
+ * Every field on a line is a snapshot taken when the order was paid for. This
+ * page never joins to today's catalog, which is why an order still reads
+ * correctly after the product has been renamed, repriced or archived.
+ */
+export type OrderItem = {
+  id: string
+  /** Null once the variant is gone. The line still renders. */
+  slug: string | null
+  image: { url: string; altText: string | null } | null
+  title: string
+  sku: string
+  options: { name: string; value: string }[]
+  unitPrice: string
+  quantity: number
+  totalPrice: string
+  discountAmount: string
+}
+
+export type Order = {
+  id: string
+  orderNumber: string
+  /** Where the parcel is, and whether the money settled — different questions. */
+  status: OrderStatus
+  paymentStatus: OrderPaymentStatus
+  placedAt: string | null
+  items: OrderItem[]
+  itemCount: number
+  subtotal: string
+  discountAmount: string
+  shippingAmount: string
+  totalAmount: string
+  currency: string
+  shippingAddress: {
+    fullName: string
+    phone: string
+    addressLine1: string
+    addressLine2: string | null
+    city: string
+    state: string
+    postalCode: string
+    country: string
+  } | null
+  payment: { provider: string; method: string | null; amount: string; paidAt: string } | null
+  /** Customer-facing statuses only, oldest first. */
+  timeline: { status: OrderStatus; at: string }[]
+  createdAt: string
+}
+
+/** The history row: enough to recognise an order, not to audit it. */
+export type OrderCard = {
+  id: string
+  orderNumber: string
+  status: OrderStatus
+  paymentStatus: OrderPaymentStatus
+  placedAt: string | null
+  itemCount: number
+  totalAmount: string
+  thumbnails: ({ url: string; altText: string | null } | null)[]
+  createdAt: string
+}
+
 // ─── checkout ────────────────────────────────────────────────────────────────
 
 export type CheckoutStatus = 'ACTIVE' | 'PAYMENT_PENDING' | 'COMPLETED' | 'EXPIRED' | 'CANCELLED'
