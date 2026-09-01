@@ -3,7 +3,10 @@ import { authenticate } from '../../middleware/auth.js'
 import { requireCustomerSession } from '../../middleware/requireRole.js'
 import { validate } from '../../middleware/validate.js'
 import { shopUuidParamSchema } from '../../schemas/shop/common.schema.js'
-import { createCheckoutSchema } from '../../schemas/shop/checkout.schema.js'
+import {
+  createCheckoutSchema,
+  setCheckoutAddressSchema,
+} from '../../schemas/shop/checkout.schema.js'
 import * as controller from './shop.checkout.controller.js'
 
 /**
@@ -12,12 +15,20 @@ import * as controller from './shop.checkout.controller.js'
  * no account; holding stock does, because a hold has to belong to someone who
  * can be charged for it.
  *
- * `GET /checkout/:id` lands in 15.4, the coupon and address routes in 15.3.
+ * The coupon routes wait until after the flow works end to end.
  */
 export const shopCheckoutRouter: Router = Router()
 
 shopCheckoutRouter.use(authenticate, requireCustomerSession)
 
 shopCheckoutRouter.post('/', validate({ body: createCheckoutSchema }), controller.create)
+
+shopCheckoutRouter.get('/:id', validate({ params: shopUuidParamSchema }), controller.getOne)
+
+shopCheckoutRouter.post(
+  '/:id/address',
+  validate({ params: shopUuidParamSchema, body: setCheckoutAddressSchema }),
+  controller.setAddresses,
+)
 
 shopCheckoutRouter.delete('/:id', validate({ params: shopUuidParamSchema }), controller.cancel)

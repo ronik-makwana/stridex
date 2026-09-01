@@ -2,7 +2,10 @@ import type { RequestHandler } from 'express'
 import { unauthorized } from '../../lib/errors.js'
 import { validatedParams } from '../../middleware/validate.js'
 import type { ShopUuidParam } from '../../schemas/shop/common.schema.js'
-import type { CreateCheckoutInput } from '../../schemas/shop/checkout.schema.js'
+import type {
+  CreateCheckoutInput,
+  SetCheckoutAddressInput,
+} from '../../schemas/shop/checkout.schema.js'
 import * as checkout from './checkout.service.js'
 
 function ownerId(req: Parameters<RequestHandler>[0]): string {
@@ -18,6 +21,29 @@ function ownerId(req: Parameters<RequestHandler>[0]): string {
 export const create: RequestHandler = async (req, res) => {
   const session = await checkout.create(ownerId(req), req.body as CreateCheckoutInput)
   res.status(201).json({ data: session })
+}
+
+/**
+ * Refresh, back button, a tab reopened an hour later — all of them land here,
+ * and none of them creates anything (§26, §27).
+ */
+export const getOne: RequestHandler = async (req, res) => {
+  const session = await checkout.findById(ownerId(req), validatedParams<ShopUuidParam>(req).id)
+  res.status(200).json({ data: session })
+}
+
+/**
+ * Answers with the whole session, re-quoted. The address changed shipping, and
+ * shipping changed the total — handing back only what was written would leave
+ * the summary on screen disagreeing with the row (§21).
+ */
+export const setAddresses: RequestHandler = async (req, res) => {
+  const session = await checkout.setAddresses(
+    ownerId(req),
+    validatedParams<ShopUuidParam>(req).id,
+    req.body as SetCheckoutAddressInput,
+  )
+  res.status(200).json({ data: session })
 }
 
 /** 204: the stock is back on the shelf and there is nothing left to read. */

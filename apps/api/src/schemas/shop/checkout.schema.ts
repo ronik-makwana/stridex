@@ -16,3 +16,14 @@ export const createCheckoutSchema = z.object({
 })
 
 export type CreateCheckoutInput = z.infer<typeof createCheckoutSchema>
+
+/**
+ * Shipping is required and billing is not: the fallback is "same as delivery",
+ * which is both the common case and the one the customer has already answered.
+ */
+export const setCheckoutAddressSchema = z.object({
+  shippingAddressId: z.uuid('Choose a delivery address'),
+  billingAddressId: z.uuid('Not a valid id').optional(),
+})
+
+export type SetCheckoutAddressInput = z.infer<typeof setCheckoutAddressSchema>

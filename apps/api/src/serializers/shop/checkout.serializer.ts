@@ -17,6 +17,7 @@ export type CheckoutSessionRecord = Prisma.CheckoutSessionGetPayload<{
     items: { include: { variant: { include: { product: { select: { slug: true } }; media: true } } } }
     shippingAddress: true
     billingAddress: true
+    order: { select: { id: true; orderNumber: true } }
   }
 }>
 
@@ -59,8 +60,14 @@ export function serializeCheckoutSession(session: CheckoutSessionRecord) {
     currency: session.currency,
     shippingAddress: session.shippingAddress ? serializeShopAddress(session.shippingAddress) : null,
     billingAddress: session.billingAddress ? serializeShopAddress(session.billingAddress) : null,
-    /** Null until the webhook lands. Its arrival is what makes this an order. */
-    orderId: session.orderId,
+    /**
+     * Null until the webhook lands; its arrival is what makes this an order.
+     * The number rides along because a tab still sitting on the payment screen
+     * needs somewhere to redirect to, not just the knowledge that it is done.
+     */
+    order: session.order
+      ? { id: session.order.id, orderNumber: session.order.orderNumber }
+      : null,
     createdAt: session.createdAt,
   }
 }
