@@ -264,6 +264,68 @@ export type Suggestion = {
   }[]
   categories: Ref[]
 }
+// ─── checkout ────────────────────────────────────────────────────────────────
+
+export type CheckoutStatus = 'ACTIVE' | 'PAYMENT_PENDING' | 'COMPLETED' | 'EXPIRED' | 'CANCELLED'
+
+/**
+ * A line as it was when the session opened — the snapshot payment charges and
+ * the order inherits, not today's catalog. A price that moves after this is
+ * quoted does not move here.
+ */
+export type CheckoutItem = {
+  id: string
+  variantId: string
+  slug: string | null
+  image: { url: string; altText: string | null } | null
+  title: string
+  sku: string
+  options: { name: string; value: string }[]
+  unitPrice: string
+  quantity: number
+  totalPrice: string
+  discountAmount: string
+  orderDiscountAllocated: string
+}
+
+/**
+ * Every money field is a string the server computed (§21). Nothing in the
+ * checkout page adds anything up — including the total it puts on the button.
+ */
+export type CheckoutSession = {
+  id: string
+  status: CheckoutStatus
+  /** The deadline. The countdown drawn from it is decoration; this is the rule. */
+  expiresAt: string
+  items: CheckoutItem[]
+  subtotal: string
+  discountAmount: string
+  shippingAmount: string
+  totalAmount: string
+  currency: string
+  shippingAddress: Address | null
+  billingAddress: Address | null
+  /** Null until the webhook lands. Its arrival is what makes this an order. */
+  order: { id: string; orderNumber: string } | null
+  createdAt: string
+}
+
+export type PaymentStatus = 'PENDING' | 'AUTHORIZED' | 'CAPTURED' | 'FAILED' | 'REFUNDED' | 'VOIDED'
+
+export type Payment = {
+  id: string
+  orderId: string | null
+  provider: string
+  providerPaymentId: string
+  amount: string
+  currency: string
+  status: PaymentStatus
+  method: string | null
+  createdAt: string
+  /** Only on the response that created it: how to complete this attempt. */
+  clientPayload?: Record<string, unknown>
+}
+
 // ─── addresses ───────────────────────────────────────────────────────────────
 
 /**

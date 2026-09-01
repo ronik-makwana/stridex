@@ -1,6 +1,7 @@
 import { createBrowserRouter } from 'react-router'
 import { ShopLayout } from '@/layouts/ShopLayout'
 import { AuthLayout } from '@/layouts/AuthLayout'
+import { CheckoutLayout } from '@/layouts/CheckoutLayout'
 import { RedirectIfAuthenticated, RequireAuth } from '@/components/require-auth'
 import HomePage from './home'
 import ProductPage from './product'
@@ -10,6 +11,7 @@ import CollectionsPage from './collections'
 import SearchPage from './search'
 import CartPage from './cart'
 import WishlistPage from './wishlist'
+import CheckoutPage from './checkout'
 import NotFoundPage from './not-found'
 import LoginPage from './auth/login'
 import RegisterPage from './auth/register'
@@ -62,6 +64,20 @@ export const router = createBrowserRouter([
 
       // Last in this group: it matches anything the routes above did not.
       { path: '*', element: <NotFoundPage /> },
+    ],
+  },
+  {
+    /**
+     * Checkout sits outside ShopLayout for the same reason the auth screens do:
+     * it has its own chrome, deliberately without the nav. Still behind
+     * RequireAuth, which sends a guest to /login?redirect=/checkout.
+     */
+    element: <CheckoutLayout />,
+    children: [
+      {
+        element: <RequireAuth />,
+        children: [{ path: 'checkout', element: <CheckoutPage /> }],
+      },
     ],
   },
   {

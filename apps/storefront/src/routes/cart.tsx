@@ -3,7 +3,7 @@ import { Link } from 'react-router'
 import { toast } from 'sonner'
 import { Heart, ShoppingBag } from 'lucide-react'
 import { useCart } from '@/features/cart/use-cart'
-import { canCheckout, startCheckout } from '@/features/cart/checkout'
+import { CHECKOUT_PATH, canCheckout } from '@/features/cart/checkout'
 import { useWishlist } from '@/features/wishlist/use-wishlist'
 import { CartLineRow } from '@/components/cart-line-row'
 import { Button } from '@/components/ui/button'
@@ -132,14 +132,8 @@ export default function CartPage() {
             auth wall sits. Disabled while every line is unbuyable, because a
             checkout with nothing to sell is a dead end with a redirect.
           */}
-          <Button
-            variant="accent"
-            size="lg"
-            className="mt-5 w-full"
-            disabled={!canCheckout(cart)}
-            onClick={() => startCheckout(cart)}
-          >
-            Checkout
+          <Button asChild variant="accent" size="lg" className="mt-5 w-full" disabled={!canCheckout(cart)}>
+            <Link to={CHECKOUT_PATH}>Checkout</Link>
           </Button>
 
           <button

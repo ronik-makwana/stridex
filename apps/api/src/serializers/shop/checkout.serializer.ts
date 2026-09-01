@@ -14,7 +14,16 @@ import { serializeShopAddress } from './address.serializer.js'
 
 export type CheckoutSessionRecord = Prisma.CheckoutSessionGetPayload<{
   include: {
-    items: { include: { variant: { include: { product: { select: { slug: true } }; media: true } } } }
+    items: {
+      include: {
+        variant: {
+          include: {
+            product: { select: { slug: true; media: { orderBy: { sortOrder: 'asc' }; take: 1 } } }
+            media: true
+          }
+        }
+      }
+    }
     shippingAddress: true
     billingAddress: true
     order: { select: { id: true; orderNumber: true } }
@@ -23,7 +32,8 @@ export type CheckoutSessionRecord = Prisma.CheckoutSessionGetPayload<{
 
 function serializeItem(item: CheckoutSessionRecord['items'][number]) {
   const options = (item.variantOptions ?? []) as { name: string; value: string }[]
-  const cover = item.variant?.media
+  // The variant's own image when it has one, the product's cover otherwise.
+  const cover = item.variant?.media ?? item.variant?.product?.media?.[0] ?? null
 
   return {
     id: item.id,

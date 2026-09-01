@@ -34,7 +34,13 @@ export function createApp(): Express {
       // Required for the refresh cookie to travel at all.
       credentials: true,
       methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],
-      allowedHeaders: ['Content-Type', 'Authorization'],
+      /**
+       * `Idempotency-Key` has to be here or the browser's preflight rejects
+       * every payment before it is sent — and curl, which does not preflight,
+       * would never notice. A header the client must send is a header this list
+       * must name.
+       */
+      allowedHeaders: ['Content-Type', 'Authorization', 'Idempotency-Key'],
       maxAge: 86_400,
     }),
   )

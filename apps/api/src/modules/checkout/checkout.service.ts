@@ -36,7 +36,17 @@ const TTL_MINUTES = 10
 
 const sessionInclude = {
   items: {
-    include: { variant: { include: { product: { select: { slug: true } }, media: true } } },
+    include: {
+      variant: {
+        include: {
+          // The product's cover as well as the variant's own image: `mediaId`
+          // is null across the catalogue today, and a summary of grey boxes is
+          // a summary nobody checks their order against.
+          product: { select: { slug: true, media: { orderBy: { sortOrder: 'asc' }, take: 1 } } },
+          media: true,
+        },
+      },
+    },
   },
   shippingAddress: true,
   billingAddress: true,

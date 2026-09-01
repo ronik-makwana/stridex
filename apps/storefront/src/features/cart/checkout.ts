@@ -1,19 +1,14 @@
-import { toast } from 'sonner'
-import { formatMoney } from '@/lib/format'
 import type { Cart } from '@/types/api'
 
 /**
- * The one way into checkout, called from the drawer and from the cart page, so
- * the two cannot start it differently. Phase 15 replaces the body with a
- * navigation to `/checkout` — which is also where the auth wall goes, so an
- * unauthenticated customer lands on `/login?redirect=/checkout` rather than
- * being blocked here.
+ * The one way into checkout, called from the cart drawer and the cart page, so
+ * the two cannot start it differently.
+ *
+ * A plain path rather than a session: `/checkout` creates the session on
+ * arrival and puts its id in the URL, which is what makes a refresh restore the
+ * same one instead of holding the stock twice.
  */
-export function startCheckout(cart: Cart) {
-  toast('Checkout arrives in Phase 15', {
-    description: `${cart.itemCount} ${cart.itemCount === 1 ? 'item' : 'items'} · ${formatMoney(cart.subtotal)}`,
-  })
-}
+export const CHECKOUT_PATH = '/checkout'
 
 /** Nothing sellable means nothing to check out — a dead end with a redirect. */
 export const canCheckout = (cart: Cart): boolean => cart.items.some((line) => line.purchasable)

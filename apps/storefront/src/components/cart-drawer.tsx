@@ -1,7 +1,7 @@
 import { Link } from 'react-router'
 import { ShoppingBag } from 'lucide-react'
 import { useCart, useCartDrawer } from '@/features/cart/use-cart'
-import { canCheckout, startCheckout } from '@/features/cart/checkout'
+import { CHECKOUT_PATH, canCheckout } from '@/features/cart/checkout'
 import { CartLineRow } from '@/components/cart-line-row'
 import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent } from '@/components/ui/sheet'
@@ -89,20 +89,12 @@ export function CartDrawer() {
                 View cart
               </Link>
             </Button>
-            <Button
-              size="lg"
-              variant="accent"
-              className="w-full"
-              disabled={!canCheckout(cart)}
-              onClick={() => {
-                // Closed first: checkout is a page, and leaving a drawer open
-                // over the page it just sent you to is how a back button gets
-                // pressed by mistake.
-                closeDrawer()
-                startCheckout(cart)
-              }}
-            >
-              Checkout
+            <Button asChild size="lg" variant="accent" className="w-full" disabled={!canCheckout(cart)}>
+              {/* Closed on the way out: leaving a drawer open over the page it
+                  just sent you to is how a back button gets pressed by mistake. */}
+              <Link to={CHECKOUT_PATH} onClick={closeDrawer}>
+                Checkout
+              </Link>
             </Button>
           </footer>
         )}
