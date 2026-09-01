@@ -70,11 +70,14 @@ export function RuleValueControl({
         </Select>
       )
 
+    // Both pick one row from a list the API sent with the field: an attribute's
+    // values, or the catalogue's tags.
+    case 'tag':
     case 'attribute-select':
       return (
         <Select value={text} onValueChange={onChange}>
           <SelectTrigger size="sm" className="min-w-0 flex-1" aria-invalid={invalid}>
-            <SelectValue placeholder="Choose a value" />
+            <SelectValue placeholder={definition.kind === 'tag' ? 'Choose a tag' : 'Choose a value'} />
           </SelectTrigger>
           <SelectContent>
             {(definition.values ?? []).map((value) => (
@@ -86,6 +89,7 @@ export function RuleValueControl({
         </Select>
       )
 
+    case 'boolean':
     case 'attribute-boolean':
       return (
         <Select value={text} onValueChange={(next) => onChange(next === 'true')}>

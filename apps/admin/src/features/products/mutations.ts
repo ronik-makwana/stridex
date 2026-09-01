@@ -1,6 +1,8 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import type { EntityStatus, Product, ProductMedia, ProductVariant } from '@/types/api'
+import { collectionKeys } from '@/features/collections/queries'
+import { tagKeys } from '@/features/tags/queries'
 import { productsApi, putToPresignedUrl } from './api'
 import { productKeys } from './queries'
 import type { BulkVariantValues, GenerateValues, ProductValues, VariantValues } from './schemas'
@@ -28,6 +30,11 @@ function useWriteDetail() {
     queryClient.setQueryData(productKeys.detail(product.id), product)
     void queryClient.invalidateQueries({ queryKey: productKeys.lists() })
     void queryClient.invalidateQueries({ queryKey: productKeys.checklist(product.id) })
+    // A save can invent a tag, retire the last use of one, and move the product
+    // in or out of manual collections — all three are lists another screen is
+    // holding a now-stale copy of.
+    void queryClient.invalidateQueries({ queryKey: tagKeys.all })
+    void queryClient.invalidateQueries({ queryKey: collectionKeys.all })
   }
 }
 

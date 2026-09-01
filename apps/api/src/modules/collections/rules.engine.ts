@@ -23,10 +23,12 @@ import type { RuleInput, RuleOperator } from '../../schemas/admin/collection.sch
 export type RuleFieldKind =
   | 'category'
   | 'brand'
+  | 'tag'
   | 'money'
   | 'text'
   | 'number'
   | 'date'
+  | 'boolean'
   | 'attribute-select'
   | 'attribute-text'
   | 'attribute-number'
@@ -37,7 +39,7 @@ export type RuleFieldDefinition = {
   label: string
   kind: RuleFieldKind
   operators: RuleOperator[]
-  /** Attribute fields only — the values the picker offers. */
+  /** Attribute and tag fields — the values the picker offers. */
   values?: { id: string; label: string }[]
   /** NUMBER attributes only. */
   unit?: string | null
@@ -51,7 +53,10 @@ const CHOICE_OPERATORS: RuleOperator[] = ['is', 'is_not']
 const BASE_FIELDS: RuleFieldDefinition[] = [
   { field: 'category', label: 'Category', kind: 'category', operators: CHOICE_OPERATORS },
   { field: 'brand', label: 'Brand', kind: 'brand', operators: CHOICE_OPERATORS },
+  // Values are appended in `fieldDefinitions` — tags are data, like attributes.
+  { field: 'tag', label: 'Tag', kind: 'tag', operators: [...CHOICE_OPERATORS, 'is_empty'] },
   { field: 'price', label: 'Price', kind: 'money', operators: NUMBER_OPERATORS },
+  { field: 'on_sale', label: 'On sale', kind: 'boolean', operators: ['is'] },
   { field: 'title', label: 'Title', kind: 'text', operators: TEXT_OPERATORS },
   { field: 'sku', label: 'SKU', kind: 'text', operators: ['contains', 'is'] },
   { field: 'stock', label: 'Available stock', kind: 'number', operators: NUMBER_OPERATORS },
@@ -72,13 +77,20 @@ const ATTRIBUTE_KIND = {
  * time an attribute is added and start posting rules the engine rejects.
  */
 export async function fieldDefinitions(): Promise<RuleFieldDefinition[]> {
-  const attributes = await prisma.attribute.findMany({
-    include: { values: { orderBy: [{ position: 'asc' }, { value: 'asc' }] } },
-    orderBy: [{ position: 'asc' }, { name: 'asc' }],
-  })
+  const [attributes, tags] = await Promise.all([
+    prisma.attribute.findMany({
+      include: { values: { orderBy: [{ position: 'asc' }, { value: 'asc' }] } },
+      orderBy: [{ position: 'asc' }, { name: 'asc' }],
+    }),
+    prisma.tag.findMany({ orderBy: { name: 'asc' } }),
+  ])
 
   return [
-    ...BASE_FIELDS,
+    ...BASE_FIELDS.map((definition) =>
+      definition.field === 'tag'
+        ? { ...definition, values: tags.map((tag) => ({ id: tag.id, label: tag.name })) }
+        : definition,
+    ),
     ...attributes.map<RuleFieldDefinition>((attribute) => {
       const kind = ATTRIBUTE_KIND[attribute.type]
       return {
@@ -282,6 +294,24 @@ async function translate(rule: RuleInput): Promise<Prisma.ProductWhereInput> {
         : { OR: [{ brandId: null }, { brandId: { not: brandId } }] }
     }
 
+    /**
+     * The condition this whole field exists for: 'tag is new arrival' keeps a
+     * collection in step with how products are actually labelled, so adding
+     * the tag on the product is all it takes to put it on the shelf — no
+     * second trip to the collection to pin it there by hand.
+     *
+     * The value is a tag id rather than its name. A tag can be renamed, and a
+     * rule that stopped matching because somebody fixed a capital letter would
+     * be a collection that empties itself for no visible reason.
+     */
+    case 'tag': {
+      if (rule.operator === 'is_empty') return { tags: { none: {} } }
+      assertOperator(rule, CHOICE_OPERATORS, 'Tag')
+      const tagId = requireString(rule)
+      const tagged = { tags: { some: { tagId } } }
+      return rule.operator === 'is' ? tagged : { NOT: tagged }
+    }
+
     case 'price': {
       assertOperator(rule, NUMBER_OPERATORS, 'Price')
       const value = requireNumber(rule)
@@ -295,6 +325,24 @@ async function translate(rule: RuleInput): Promise<Prisma.ProductWhereInput> {
             ? { lt: value }
             : { equals: value }
       return { variants: { some: { price: filter } } }
+    }
+
+    /**
+     * A markdown is a fact about the price, not a property of the shoe, so it
+     * is computed here rather than stored as an attribute somebody has to keep
+     * in step with the price list. `compare_at_price > price` is the same test
+     * the storefront's discount pill is drawn from, which is what stops a
+     * collection called Sale from disagreeing with the badge on the card.
+     *
+     * Any variant counts, for the reason price does: a product is on sale when
+     * the sizes a shopper would buy are marked down.
+     */
+    case 'on_sale': {
+      assertOperator(rule, ['is'], 'On sale')
+      const discounted: Prisma.ProductWhereInput = {
+        variants: { some: { compareAtPrice: { gt: prisma.productVariant.fields.price } } },
+      }
+      return rule.value === false ? { NOT: discounted } : discounted
     }
 
     case 'title': {

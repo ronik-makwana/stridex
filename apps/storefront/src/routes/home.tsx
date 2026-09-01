@@ -24,10 +24,10 @@ export default function HomePage() {
         </p>
         <div className="mt-8 flex flex-wrap gap-3">
           <Button asChild size="lg">
-            <Link to="/c/men">Shop men</Link>
+            <Link to="/categories/men">Shop men</Link>
           </Button>
           <Button asChild size="lg" variant="outline">
-            <Link to="/c/women">Shop women</Link>
+            <Link to="/categories/women">Shop women</Link>
           </Button>
         </div>
       </section>

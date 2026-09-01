@@ -1,6 +1,9 @@
 import { Router } from 'express'
 import { shopAuthRouter } from '../modules/auth/shop.auth.routes.js'
+import { shopCategoriesRouter } from '../modules/categories/shop.categories.routes.js'
+import { shopCollectionsRouter } from '../modules/collections/shop.collections.routes.js'
 import { shopProductsRouter } from '../modules/products/shop.products.routes.js'
+import { shopSearchRouter } from '../modules/search/shop.search.routes.js'
 import { shopReviewsRouter } from '../modules/reviews/shop.reviews.routes.js'
 
 /**
@@ -21,13 +24,15 @@ export const shopRouter: Router = Router()
 shopRouter.use('/auth', shopAuthRouter)
 
 // Public. A product page behind a session is a product page Google cannot read.
+shopRouter.use('/categories', shopCategoriesRouter)
 shopRouter.use('/products', shopProductsRouter)
+shopRouter.use('/collections', shopCollectionsRouter)
+shopRouter.use('/search', shopSearchRouter)
 
 // Editing and deleting your own review, by id. Reading and writing a product's
 // reviews lives under `/products/:slug/reviews`.
 shopRouter.use('/reviews', shopReviewsRouter)
 
-// Phase 13: /categories/tree, /products (list), /products/facets,
-//           /collections, /search    Phase 14: /cart, /wishlist
+// Phase 14: /cart, /wishlist
 // Phase 15: /addresses, /checkout, /payments
 // Phase 16: /orders, /account        Phase 17: /reviews

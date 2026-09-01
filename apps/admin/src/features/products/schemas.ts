@@ -49,6 +49,24 @@ export const productSchema = z.object({
     .nullable()
     .transform((value) => value || null),
   status: entityStatus,
+  /**
+   * Free text, and the only two rules are the server's: no commas, because
+   * that is what the input splits pasted lists on, and a length that fits a
+   * chip. Duplicates are settled by slug on the server — 'Sale' and 'sale' are
+   * one tag — so the client does not try to guess at that.
+   */
+  tags: z
+    .array(
+      z
+        .string()
+        .trim()
+        .min(1, 'A tag needs a name')
+        .max(40, 'Use at most 40 characters')
+        .refine((value) => !value.includes(','), 'Tags cannot contain commas'),
+    )
+    .max(30, 'That is more than 30 tags'),
+  /** Manual collections only. The picker never offers a dynamic one. */
+  collectionIds: z.array(z.uuid()).max(50, 'That is more than 50 collections'),
 })
 
 /** One attribute row, as the editor holds it before the server types it. */

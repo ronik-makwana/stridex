@@ -1,62 +1,63 @@
 import * as React from 'react'
 import { Link, NavLink, useLocation } from 'react-router'
-import { Heart, Menu, Search, ShoppingBag, User } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Heart, Menu, Search, ShoppingBag, User } from 'lucide-react'
 import { useAuth } from '@/lib/auth'
+import { useCategoryTree } from '@/features/catalog/queries'
 import { loginPathFor } from '@/lib/redirect'
 import { cn } from '@/lib/utils'
+import { SearchOverlay } from '@/components/search-overlay'
 import { Sheet, SheetClose, SheetContent, SheetTrigger } from '@/components/ui/sheet'
+import type { CategoryNode } from '@/types/api'
 
 /**
- * Top-level nav. Static in Phase 11 by design: the real tree comes from
- * `GET /categories/tree` in Phase 13, and building a nav against an endpoint
- * that does not exist yet is exactly the "all endpoints first" mistake the
- * build order forbids. The hover mega-panel lands with the tree.
- *
- * `Sale` is a collection wearing a nav item — it points at a slug, not a
- * special page.
+ * Collections wearing nav items. They point at slugs rather than at special
+ * pages, so what sits behind them is merchandised from the admin without a
+ * deploy — and the order here is the order they appear, after the categories.
  */
-const NAV_LINKS = [
-  { label: 'Men', to: '/c/men' },
-  { label: 'Women', to: '/c/women' },
-  { label: 'Kids', to: '/c/kids' },
+const COLLECTION_LINKS = [
   { label: 'Sale', to: '/collections/sale' },
-] as const
+  { label: 'New Arrivals', to: '/collections/new-arrivals' },
+]
 
 /**
- * Thin and borderless at rest, growing a hairline once the page moves — so a
+ * Thin and borderless at rest, growing a hairline once the page moves, so a
  * full-bleed hero meets the top of the window rather than a rule.
  */
 function useScrolled(threshold = 8) {
   const [scrolled, setScrolled] = React.useState(false)
-
   React.useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > threshold)
     onScroll()
     window.addEventListener('scroll', onScroll, { passive: true })
     return () => window.removeEventListener('scroll', onScroll)
   }, [threshold])
-
   return scrolled
 }
 
-function IconLink({
+function IconButton({
   to,
   label,
+  onClick,
   children,
 }: {
-  to: string
+  to?: string
   label: string
+  onClick?: () => void
   children: React.ReactNode
 }) {
+  const className =
+    'text-foreground/80 hover:text-foreground inline-flex size-10 items-center justify-center transition-colors'
+  if (to) {
+    return (
+      <Link to={to} aria-label={label} title={label} className={className}>
+        {children}
+      </Link>
+    )
+  }
   return (
-    <Link
-      to={to}
-      aria-label={label}
-      title={label}
-      className="text-foreground/80 hover:text-foreground relative inline-flex size-10 items-center justify-center transition-colors"
-    >
+    <button type="button" onClick={onClick} aria-label={label} title={label} className={className}>
       {children}
-    </Link>
+    </button>
   )
 }
 
@@ -64,18 +65,25 @@ export function Header() {
   const scrolled = useScrolled()
   const { isAuthenticated } = useAuth()
   const location = useLocation()
+  const { data: tree } = useCategoryTree()
   const [navOpen, setNavOpen] = React.useState(false)
+  const [searchOpen, setSearchOpen] = React.useState(false)
+  const [hovered, setHovered] = React.useState<string | null>(null)
 
-  // Sending a guest to /login from the header must bring them back where they
-  // were. `loginPathFor` builds the param; `safeRedirect` validates it on the
-  // way out, so a hand-edited URL cannot leave the site.
   const accountHref = isAuthenticated
-    ? '/account/orders'
+    ? '/account'
     : loginPathFor(location.pathname, location.search)
 
-  // A route change closes the drawer. Without this, tapping a category leaves
-  // the drawer open over the page it just navigated to.
-  React.useEffect(() => setNavOpen(false), [location.pathname])
+  // A route change closes both, or tapping a category leaves the drawer open
+  // over the page it just navigated to.
+  React.useEffect(() => {
+    setNavOpen(false)
+    setSearchOpen(false)
+    setHovered(null)
+  }, [location.pathname, location.search])
+
+  const roots = tree ?? []
+  const openRoot = roots.find((root) => root.id === hovered) ?? null
 
   return (
     <header
@@ -83,6 +91,9 @@ export function Header() {
         'bg-background sticky top-0 z-40 transition-shadow',
         scrolled ? 'border-b' : 'border-b border-transparent',
       )}
+      // On the wrapper, not on each link: moving the pointer from a nav item
+      // down into the panel must not count as leaving.
+      onMouseLeave={() => setHovered(null)}
     >
       <div className="mx-auto flex h-16 max-w-[1400px] items-center gap-2 px-4 sm:px-6 lg:px-10">
         <Sheet open={navOpen} onOpenChange={setNavOpen}>
@@ -93,26 +104,7 @@ export function Header() {
             <Menu className="size-5" />
           </SheetTrigger>
           <SheetContent side="left" title="Menu" className="max-w-xs">
-            <div className="border-b px-6 py-5">
-              <span className="wordmark text-base">StrideX</span>
-            </div>
-            {/*
-              One flat level in Phase 11. Phase 13 turns this into a drill-in:
-              tapping a parent slides its children in, one level at a time. An
-              accordion showing all 24 categories at once is the thing to avoid.
-            */}
-            <nav className="flex flex-col px-2 py-4">
-              {NAV_LINKS.map((link) => (
-                <SheetClose key={link.to} asChild>
-                  <NavLink
-                    to={link.to}
-                    className="hover:bg-secondary rounded-md px-4 py-3 text-base font-medium transition-colors"
-                  >
-                    {link.label}
-                  </NavLink>
-                </SheetClose>
-              ))}
-            </nav>
+            <MobileNav roots={roots} />
           </SheetContent>
         </Sheet>
 
@@ -121,13 +113,30 @@ export function Header() {
         </Link>
 
         <nav className="ml-10 hidden items-center gap-8 lg:flex">
-          {NAV_LINKS.map((link) => (
+          {roots.map((root) => (
+            <NavLink
+              key={root.id}
+              to={`/categories/${root.slug}`}
+              onMouseEnter={() => setHovered(root.id)}
+              onFocus={() => setHovered(root.id)}
+              className={({ isActive }) =>
+                cn(
+                  'hover:text-foreground py-5 text-sm font-medium transition-colors',
+                  isActive || hovered === root.id ? 'text-foreground' : 'text-foreground/70',
+                )
+              }
+            >
+              {root.name}
+            </NavLink>
+          ))}
+          {COLLECTION_LINKS.map((link) => (
             <NavLink
               key={link.to}
               to={link.to}
+              onMouseEnter={() => setHovered(null)}
               className={({ isActive }) =>
                 cn(
-                  'hover:text-foreground text-sm font-medium transition-colors',
+                  'hover:text-foreground py-5 text-sm font-medium whitespace-nowrap transition-colors',
                   isActive ? 'text-foreground' : 'text-foreground/70',
                 )
               }
@@ -138,25 +147,144 @@ export function Header() {
         </nav>
 
         <div className="ml-auto flex items-center gap-0.5">
-          <IconLink to="/search" label="Search">
+          <IconButton label="Search" onClick={() => setSearchOpen(true)}>
             <Search className="size-5" />
-          </IconLink>
-          <IconLink to="/wishlist" label="Wishlist">
+          </IconButton>
+          <IconButton to="/wishlist" label="Wishlist">
             <Heart className="size-5" />
-          </IconLink>
-          <IconLink to={accountHref} label={isAuthenticated ? 'Your account' : 'Sign in'}>
+          </IconButton>
+          <IconButton to={accountHref} label={isAuthenticated ? 'Your account' : 'Sign in'}>
             <User className="size-5" />
-          </IconLink>
-          {/*
-            No count yet. Phase 14 reads it from `useCart()` — which hides the
-            local-vs-server split — so nothing here ever branches on `if (user)`,
-            and a `storage` listener keeps a second tab in step.
-          */}
-          <IconLink to="/cart" label="Bag">
+          </IconButton>
+          {/* No count yet. Phase 14 reads it from `useCart()`. */}
+          <IconButton to="/cart" label="Bag">
             <ShoppingBag className="size-5" />
-          </IconLink>
+          </IconButton>
         </div>
       </div>
+
+      {/*
+        The mega-panel. The tree is two levels deep, so this is one flat column
+        set rather than a cascade — nothing here needs to expand further.
+      */}
+      {openRoot && (openRoot.children?.length ?? 0) > 0 && (
+        <div className="bg-background absolute inset-x-0 top-full hidden border-b border-t lg:block">
+          <div className="mx-auto max-w-[1400px] px-4 py-8 sm:px-6 lg:px-10">
+            <div className="grid grid-cols-3 gap-x-10 gap-y-2.5">
+              {openRoot.children!.map((child) => (
+                <Link
+                  key={child.id}
+                  to={`/categories/${child.slug}`}
+                  className="text-foreground/75 hover:text-foreground flex items-baseline justify-between gap-4 py-1 text-sm transition-colors"
+                >
+                  <span>{child.name}</span>
+                  <span className="text-muted-foreground text-xs tabular-nums">
+                    {child.productCount}
+                  </span>
+                </Link>
+              ))}
+            </div>
+            <Link
+              to={`/categories/${openRoot.slug}`}
+              className="mt-6 inline-block text-sm underline underline-offset-4"
+            >
+              Everything in {openRoot.name}
+            </Link>
+          </div>
+        </div>
+      )}
+
+      <SearchOverlay open={searchOpen} onClose={() => setSearchOpen(false)} />
     </header>
+  )
+}
+
+/**
+ * Drills in one level at a time rather than expanding an accordion. The tree is
+ * 3 roots and 21 children — showing all 24 at once on a phone is the thing to
+ * avoid.
+ */
+function MobileNav({ roots }: { roots: CategoryNode[] }) {
+  const [openRoot, setOpenRoot] = React.useState<CategoryNode | null>(null)
+
+  return (
+    <>
+      <div className="flex items-center gap-2 border-b px-6 py-5">
+        {openRoot && (
+          <button
+            type="button"
+            onClick={() => setOpenRoot(null)}
+            aria-label="Back"
+            className="text-muted-foreground hover:text-foreground -ml-2"
+          >
+            <ChevronLeft className="size-5" />
+          </button>
+        )}
+        <span className="wordmark text-base">{openRoot ? openRoot.name : 'StrideX'}</span>
+      </div>
+
+      <nav className="flex flex-col overflow-y-auto px-2 py-4">
+        {openRoot ? (
+          <>
+            <SheetClose asChild>
+              <NavLink
+                to={`/categories/${openRoot.slug}`}
+                className="hover:bg-secondary rounded-md px-4 py-3 text-base font-medium"
+              >
+                Everything in {openRoot.name}
+              </NavLink>
+            </SheetClose>
+            {openRoot.children?.map((child) => (
+              <SheetClose asChild key={child.id}>
+                <NavLink
+                  to={`/categories/${child.slug}`}
+                  className="hover:bg-secondary flex items-center justify-between rounded-md px-4 py-3 text-base"
+                >
+                  <span>{child.name}</span>
+                  <span className="text-muted-foreground text-xs tabular-nums">
+                    {child.productCount}
+                  </span>
+                </NavLink>
+              </SheetClose>
+            ))}
+          </>
+        ) : (
+          <>
+            {roots.map((root) =>
+              (root.children?.length ?? 0) > 0 ? (
+                <button
+                  key={root.id}
+                  type="button"
+                  onClick={() => setOpenRoot(root)}
+                  className="hover:bg-secondary flex items-center justify-between rounded-md px-4 py-3 text-left text-base font-medium"
+                >
+                  <span>{root.name}</span>
+                  <ChevronRight className="text-muted-foreground size-4" />
+                </button>
+              ) : (
+                <SheetClose asChild key={root.id}>
+                  <NavLink
+                    to={`/categories/${root.slug}`}
+                    className="hover:bg-secondary rounded-md px-4 py-3 text-base font-medium"
+                  >
+                    {root.name}
+                  </NavLink>
+                </SheetClose>
+              ),
+            )}
+            {COLLECTION_LINKS.map((link) => (
+              <SheetClose asChild key={link.to}>
+                <NavLink
+                  to={link.to}
+                  className="hover:bg-secondary rounded-md px-4 py-3 text-base font-medium"
+                >
+                  {link.label}
+                </NavLink>
+              </SheetClose>
+            ))}
+          </>
+        )}
+      </nav>
+    </>
   )
 }

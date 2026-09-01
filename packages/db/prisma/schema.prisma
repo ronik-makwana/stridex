@@ -343,6 +343,7 @@ model Product {
   variantOptions ProductVariantOption[]
   variants       ProductVariant[]
   collections    CollectionProduct[]
+  tags           ProductTag[]
   wishlistItems  WishlistItem[]
   reviews        Review[]
 
@@ -441,6 +442,38 @@ model VariantOptionAssignment {
   @@id([variantId, optionValueId])
   @@index([optionValueId])
   @@map("variant_option_assignments")
+}
+
+// ─────────────────────────────── tags ───────────────────────────────
+
+/**
+ * Free-form labels, created by typing them on a product rather than managed
+ * from a screen of their own. `slug` is what makes two spellings of the same
+ * word one tag — 'Summer Sale' and 'summer sale' both normalise to
+ * `summer-sale` — while `name` keeps whichever casing was typed first.
+ */
+model Tag {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name      String
+  slug      String   @unique
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  products ProductTag[]
+
+  @@map("tags")
+}
+
+model ProductTag {
+  productId String @map("product_id") @db.Uuid
+  tagId     String @map("tag_id") @db.Uuid
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  tag     Tag     @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([productId, tagId])
+  // 'Every product tagged sale' reads the join from the tag's side.
+  @@index([tagId])
+  @@map("product_tags")
 }
 
 // ─────────────────────────────── collections ───────────────────────────────

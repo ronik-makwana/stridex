@@ -270,6 +270,25 @@ export type ProductVariant = {
 
 export type ProductRef = { id: string; name: string; slug: string }
 
+/** A tag as it appears on a product. Created by typing one; there is no editor. */
+export type Tag = {
+  id: string
+  name: string
+  slug: string
+  /** How many products wear it. 0 everywhere except the suggestion list. */
+  productCount: number
+}
+
+export type ProductTagRef = { id: string; name: string; slug: string }
+
+/** Manual collections only — a dynamic one's membership is not editable here. */
+export type ProductCollectionRef = {
+  id: string
+  name: string
+  slug: string
+  status: EntityStatus
+}
+
 export type Product = {
   id: string
   title: string
@@ -291,11 +310,13 @@ export type Product = {
   /** Summed available across variants. Red at zero, even when active. */
   totalStock: number
 
-  /** `null` on the list endpoint — only the detail one loads these four. */
+  /** `null` on the list endpoint — only the detail one loads these six. */
   media: ProductMedia[] | null
   attributes: ProductAttributeRow[] | null
   variantOptions: ProductVariantOptionRow[] | null
   variants: ProductVariant[] | null
+  tags: ProductTagRef[] | null
+  collections: ProductCollectionRef[] | null
 
   createdAt: string
   updatedAt: string
@@ -467,10 +488,12 @@ export type RuleOperator =
 export type RuleFieldKind =
   | 'category'
   | 'brand'
+  | 'tag'
   | 'money'
   | 'text'
   | 'number'
   | 'date'
+  | 'boolean'
   | 'attribute-select'
   | 'attribute-text'
   | 'attribute-number'
@@ -486,7 +509,7 @@ export type RuleFieldDefinition = {
   label: string
   kind: RuleFieldKind
   operators: RuleOperator[]
-  /** Attribute select fields only — the values the picker offers. */
+  /** Attribute select and tag fields — the values the picker offers. */
   values?: { id: string; label: string }[]
   unit?: string | null
 }

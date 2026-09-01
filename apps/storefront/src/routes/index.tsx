@@ -4,6 +4,10 @@ import { AuthLayout } from '@/layouts/AuthLayout'
 import { RedirectIfAuthenticated, RequireAuth } from '@/components/require-auth'
 import HomePage from './home'
 import ProductPage from './product'
+import CategoryPage from './category'
+import CollectionPage from './collection'
+import CollectionsPage from './collections'
+import SearchPage from './search'
 import NotFoundPage from './not-found'
 import LoginPage from './auth/login'
 import RegisterPage from './auth/register'
@@ -30,9 +34,13 @@ export const router = createBrowserRouter([
     children: [
       { index: true, element: <HomePage /> },
 
-      { path: 'p/:slug', element: <ProductPage /> },
+      { path: 'products/:slug', element: <ProductPage /> },
+      { path: 'categories/:slug', element: <CategoryPage /> },
+      // Before ':slug', or 'collections' with no slug never matches the index.
+      { path: 'collections', element: <CollectionsPage /> },
+      { path: 'collections/:slug', element: <CollectionPage /> },
+      { path: 'search', element: <SearchPage /> },
 
-      // Phase 13: /c/:slug, /collections, /collections/:slug, /search
       // Phase 14: /cart, /wishlist
 
       {

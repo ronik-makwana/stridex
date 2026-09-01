@@ -74,6 +74,10 @@ const toFormValues = (product: Product): ProductFormValues => ({
   brandId: product.brandId ?? '',
   categoryId: product.categoryId ?? '',
   status: product.status,
+  // Names, not ids: a tag is created by typing it, so the form holds what was
+  // typed and the server resolves it to a row.
+  tags: (product.tags ?? []).map((tag) => tag.name),
+  collectionIds: (product.collections ?? []).map((collection) => collection.id),
 })
 
 /** Server field errors → the form control that owns them. */
@@ -84,7 +88,13 @@ function applyFieldErrors(
 ) {
   if (error instanceof ApiError && error.isFieldError) {
     for (const [field, message] of Object.entries(error.fields!)) {
-      if (field === 'title' || field === 'slug' || field === 'description') {
+      if (
+        field === 'title' ||
+        field === 'slug' ||
+        field === 'description' ||
+        field === 'tags' ||
+        field === 'collectionIds'
+      ) {
         setError(field, message)
       } else {
         setBanner(message)
@@ -142,6 +152,8 @@ export function NewProductPage() {
       brandId: '',
       categoryId: '',
       status: 'DRAFT',
+      tags: [],
+      collectionIds: [],
     },
   })
 
@@ -544,7 +556,7 @@ function ProductEditor({ product }: { product: Product }) {
 
         <aside className="space-y-4">
           <StatusPanel form={form} />
-          <OrganizationPanel form={form} />
+          <OrganizationPanel form={form} collections={product.collections ?? []} />
 
           <section className="bg-card text-muted-foreground space-y-1.5 rounded-lg border p-5 text-xs">
             <p>

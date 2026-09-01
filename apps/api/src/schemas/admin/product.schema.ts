@@ -66,6 +66,29 @@ const quantitySchema = z
   .min(0, 'Cannot be negative')
   .max(1_000_000, 'That is more stock than this system will hold')
 
+/**
+ * A tag as it is typed. Tags are free text — created by naming one on a product
+ * rather than from a screen of their own — so the only rules are the ones that
+ * keep the label readable: no commas, because that is the separator the input
+ * splits on, and a length that fits a chip.
+ */
+const tagNameSchema = z
+  .string()
+  .trim()
+  .min(1, 'A tag needs a name')
+  .max(40, 'Use at most 40 characters')
+  .refine((value) => !value.includes(','), 'Tags cannot contain commas')
+
+/** Whole-list replacement. The service resolves names to rows and dedupes by slug. */
+const tagsSchema = z.array(tagNameSchema).max(30, 'That is more than 30 tags')
+
+/**
+ * Manual collections this product belongs to, sent whole. Dynamic collections
+ * are refused rather than ignored: membership there is decided by rules, and
+ * quietly dropping the id would look like the save worked.
+ */
+const collectionIdsSchema = z.array(z.uuid('Not a valid id')).max(50, 'That is more than 50 collections')
+
 // ─── products ────────────────────────────────────────────────────────────────
 
 /** The three buckets the stock filter offers. `low` reads the per-variant threshold. */
@@ -117,6 +140,8 @@ export const createProductSchema = z.object({
   status: entityStatusSchema.default('DRAFT'),
   attributes: z.array(productAttributeInputSchema).max(60).optional(),
   variantOptions: z.array(productVariantOptionInputSchema).max(3).optional(),
+  tags: tagsSchema.optional(),
+  collectionIds: collectionIdsSchema.optional(),
 })
 
 /**
@@ -135,6 +160,8 @@ export const updateProductSchema = z
     status: entityStatusSchema.optional(),
     attributes: z.array(productAttributeInputSchema).max(60).optional(),
     variantOptions: z.array(productVariantOptionInputSchema).max(3).optional(),
+    tags: tagsSchema.optional(),
+    collectionIds: collectionIdsSchema.optional(),
   })
   .refine((values) => Object.keys(values).length > 0, 'Nothing to update')
 

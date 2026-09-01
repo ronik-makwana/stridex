@@ -168,6 +168,8 @@ export type ProductCard = {
   compareAtPrice: string | null
   discountPercent: number | null
   stock: StockBucket
+  /** Always present; `{ average: 0, count: 0 }` when nobody has reviewed it. */
+  rating: { average: number; count: number }
 }
 
 // ─── reviews ─────────────────────────────────────────────────────────────────
@@ -203,4 +205,62 @@ export type ReviewListResponse = {
     /** null for a guest; null for a customer who has not reviewed yet. */
     myReviewId: string | null
   }
+}
+
+// ─── browsing: categories, filters, collections ──────────────────────────────
+
+export type CategoryNode = {
+  id: string
+  name: string
+  slug: string
+  description: string | null
+  parentId: string | null
+  level: number
+  position: number
+  /** Rolled up from descendants, so a parent never reads 0. */
+  productCount: number
+  children?: CategoryNode[]
+}
+
+export type CategoryDetail = Omit<CategoryNode, 'children'> & {
+  breadcrumbs: Ref[]
+}
+
+export type FacetValue = { id: string; label: string; count: number }
+
+/** `id` is 'brand' or an attribute uuid — the key the query string uses. */
+export type Facet = { id: string; name: string; slug: string; values: FacetValue[] }
+
+export type FacetsResponse = {
+  facets: Facet[]
+  price: { min: number; max: number } | null
+}
+
+export type ProductSort = 'featured' | 'newest' | 'price_asc' | 'price_desc' | 'name_asc'
+
+export type ProductListResponse = {
+  data: ProductCard[]
+  meta: ListMeta & { sort: ProductSort }
+}
+
+export type Collection = {
+  id: string
+  name: string
+  slug: string
+  description: string | null
+  imageUrl: string | null
+  type: 'MANUAL' | 'DYNAMIC'
+  productCount: number
+}
+
+export type Suggestion = {
+  products: {
+    id: string
+    slug: string
+    title: string
+    brand: string | null
+    image: string | null
+    price: string | null
+  }[]
+  categories: Ref[]
 }

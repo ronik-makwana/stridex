@@ -271,7 +271,14 @@ export type ShopProductCardRecord = Product & {
  * name, a price and whether it is buyable — resolving a size happens on the
  * product page.
  */
-export function serializeShopProductCard(product: ShopProductCardRecord) {
+export type CardRating = { average: number; count: number }
+
+const NO_REVIEWS: CardRating = { average: 0, count: 0 }
+
+export function serializeShopProductCard(
+  product: ShopProductCardRecord,
+  rating: CardRating = NO_REVIEWS,
+) {
   const activeVariants = product.variants.filter((v) => v.status === 'ACTIVE')
 
   // The price shown is the cheapest sellable one, and the markdown shown is
@@ -293,6 +300,13 @@ export function serializeShopProductCard(product: ShopProductCardRecord) {
     compareAtPrice: cheapest ? moneyOrNull(cheapest.compareAtPrice) : null,
     discountPercent: cheapest ? discountPercent(cheapest.price, cheapest.compareAtPrice) : null,
     stock: overallStock(activeVariants.map((v) => stockBucket(v.inventory))),
+    /**
+     * Batched in by the caller from one grouped query, and always present —
+     * `{ average: 0, count: 0 }` for a product nobody has reviewed. Every card
+     * renders the row, so the grid keeps one consistent shape rather than some
+     * cards being a line taller than their neighbours.
+     */
+    rating: rating.count > 0 ? rating : NO_REVIEWS,
   }
 }
 

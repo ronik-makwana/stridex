@@ -33,7 +33,7 @@ export const ruleFieldSchema = z
   .string()
   .trim()
   .regex(
-    /^(category|brand|price|title|sku|stock|created_at|attribute:[0-9a-fA-F-]{36})$/,
+    /^(category|brand|tag|price|on_sale|title|sku|stock|created_at|attribute:[0-9a-fA-F-]{36})$/,
     'Not a field collections can match on',
   )
 

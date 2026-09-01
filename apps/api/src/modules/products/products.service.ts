@@ -22,6 +22,7 @@ import {
   type CategoryRef,
   type ProductDetailRecord,
 } from './products.repository.js'
+import { syncProductTags } from '../tags/tags.service.js'
 
 const productSlugLookup = {
   findBySlug: (slug: string) => prisma.product.findUnique({ where: { slug }, select: { id: true } }),
@@ -410,6 +411,90 @@ async function syncVariantOptions(
   }
 }
 
+/**
+ * Manual collection membership, edited from the product's side. The collection
+ * editor has always been able to add a product; this is the same join table
+ * reached from the other end, because "which collections is this in" is a
+ * question you ask while filing a product, not while merchandising a campaign.
+ *
+ * Dynamic collections are refused rather than skipped. Their membership is a
+ * rule result, and accepting the id silently would report a save that changed
+ * nothing.
+ */
+async function syncCollections(
+  tx: Prisma.TransactionClient,
+  productId: string,
+  collectionIds: string[],
+) {
+  const wanted = [...new Set(collectionIds)]
+
+  const collections = await tx.collection.findMany({
+    where: { id: { in: wanted } },
+    select: { id: true, name: true, type: true },
+  })
+
+  if (collections.length !== wanted.length) {
+    throw badRequest('One of those collections no longer exists', {
+      collectionIds: 'Reopen the picker and choose again.',
+    })
+  }
+
+  const dynamic = collections.filter((collection) => collection.type !== 'MANUAL')
+  if (dynamic.length > 0) {
+    throw unprocessable(
+      `${dynamic.map((collection) => collection.name).join(' and ')} ${dynamic.length === 1 ? 'picks its' : 'pick their'} products by rules`,
+      'Edit the conditions on the collection instead, or switch it to manual first.',
+    )
+  }
+
+  // Only the manual links are compared. A dynamic collection holding a stale
+  // row from when it was manual is not in the list the picker showed, and
+  // diffing against it would delete a row this save never mentioned.
+  const existing = await tx.collectionProduct.findMany({
+    where: { productId, collection: { type: 'MANUAL' } },
+    select: { collectionId: true },
+  })
+  const current = new Set(existing.map((row) => row.collectionId))
+  const next = new Set(wanted)
+
+  const removed = [...current].filter((collectionId) => !next.has(collectionId))
+  const added = wanted.filter((collectionId) => !current.has(collectionId))
+
+  if (removed.length > 0) {
+    await tx.collectionProduct.deleteMany({
+      where: { productId, collectionId: { in: removed } },
+    })
+    // Close the gaps, so each collection's pinned order stays a dense 0..n-1
+    // and the next add lands where the merchandiser expects.
+    for (const collectionId of removed) {
+      const remaining = await tx.collectionProduct.findMany({
+        where: { collectionId },
+        orderBy: { position: 'asc' },
+        select: { productId: true },
+      })
+      for (const [index, row] of remaining.entries()) {
+        await tx.collectionProduct.update({
+          where: { collectionId_productId: { collectionId, productId: row.productId } },
+          data: { position: index },
+        })
+      }
+    }
+  }
+
+  // Appended, never inserted: a product added from here belongs at the end of
+  // whatever order the collection's own screen was arranged into.
+  for (const collectionId of added) {
+    const last = await tx.collectionProduct.findFirst({
+      where: { collectionId },
+      orderBy: { position: 'desc' },
+      select: { position: true },
+    })
+    await tx.collectionProduct.create({
+      data: { collectionId, productId, position: (last?.position ?? -1) + 1 },
+    })
+  }
+}
+
 // ─── writes ──────────────────────────────────────────────────────────────────
 
 export async function create(input: CreateProductInput): Promise<ProductDetail> {
@@ -443,6 +528,8 @@ export async function create(input: CreateProductInput): Promise<ProductDetail> 
         input.variantOptions.map((row) => row.variantOptionId),
       )
     }
+    if (input.tags?.length) await syncProductTags(tx, created.id, input.tags)
+    if (input.collectionIds?.length) await syncCollections(tx, created.id, input.collectionIds)
 
     return created
   })
@@ -486,6 +573,8 @@ export async function update(id: string, input: UpdateProductInput): Promise<Pro
     if (input.variantOptions !== undefined) {
       await syncVariantOptions(tx, id, input.variantOptions.map((row) => row.variantOptionId))
     }
+    if (input.tags !== undefined) await syncProductTags(tx, id, input.tags)
+    if (input.collectionIds !== undefined) await syncCollections(tx, id, input.collectionIds)
   })
 
   return findById(id)
@@ -634,6 +723,14 @@ export async function duplicate(
         variantOptionId: row.variantOptionId,
         position: row.position,
       })),
+    })
+
+    // Tags come along; collection membership does not. A tag describes the
+    // product — a copy of a waterproof boot is still waterproof — while being
+    // in 'Spring campaign' is a placement somebody chose for one product, and a
+    // draft copy appearing there is not what duplicating meant.
+    await tx.productTag.createMany({
+      data: source.tags.map((row) => ({ productId: created.id, tagId: row.tagId })),
     })
 
     // Old media id → new, so a variant's image survives the copy.

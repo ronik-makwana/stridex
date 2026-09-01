@@ -9,9 +9,9 @@ const COLUMNS = [
   {
     heading: 'Shop',
     links: [
-      { label: 'Men', to: '/c/men' },
-      { label: 'Women', to: '/c/women' },
-      { label: 'Kids', to: '/c/kids' },
+      { label: 'Men', to: '/categories/men' },
+      { label: 'Women', to: '/categories/women' },
+      { label: 'Kids', to: '/categories/kids' },
       { label: 'Sale', to: '/collections/sale' },
     ],
   },

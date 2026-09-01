@@ -1,8 +1,11 @@
 import type { UseFormReturn } from 'react-hook-form'
 import { useBrands } from '@/features/brands/queries'
 import type { ProductFormValues, ProductOutput } from '@/features/products/schemas'
+import type { ProductCollectionRef } from '@/types/api'
 import { SlugField } from '@/components/slug-field'
 import { CategorySelect } from '@/components/category-select'
+import { CollectionSelect } from '@/components/collection-select'
+import { TagInput } from '@/components/tag-input'
 import { STATUS_OPTIONS } from '@/components/status-badge'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -130,19 +133,35 @@ export function StatusPanel({
 }
 
 /**
- * The rail. Brand and category decide where a product is filed and where the
- * storefront surfaces it.
+ * The rail. Four ways of filing the same product, in the order they get
+ * decided: what made it, where it lives, what describes it, and what campaign
+ * it is part of.
+ *
+ * Category is one and exclusive; tags and collections are many, and the
+ * difference between them is who chooses. A tag is a property of the product —
+ * waterproof, gore-tex, wide-fit — while a collection is a placement somebody
+ * merchandised. Both save with the product, so one Save button settles the
+ * whole panel.
  */
 export function OrganizationPanel({
   form,
+  collections = [],
 }: {
   form: UseFormReturn<ProductFormValues, unknown, ProductOutput>
+  /** The product's saved collections, for chip names before the list loads. */
+  collections?: ProductCollectionRef[]
 }) {
-  const { setValue, watch } = form
+  const {
+    setValue,
+    watch,
+    formState: { errors },
+  } = form
   const { data: brands, isPending } = useBrands({ limit: 100, sort: 'name:asc' })
 
   const brandId = watch('brandId')
   const categoryId = watch('categoryId')
+  const tags = watch('tags')
+  const collectionIds = watch('collectionIds')
 
   const write = (field: 'brandId' | 'categoryId', value: string | null) =>
     setValue(field, value as never, { shouldDirty: true })
@@ -177,6 +196,21 @@ export function OrganizationPanel({
         value={categoryId}
         onChange={(value) => write('categoryId', value)}
         className="w-full"
+      />
+
+      <TagInput
+        value={tags ?? []}
+        onChange={(next) => setValue('tags', next, { shouldDirty: true })}
+        // Zod reports the offending element, so the array-level error is the
+        // one worth showing beside a control that holds all of them.
+        error={errors.tags?.message ?? errors.tags?.find?.((issue) => issue?.message)?.message}
+      />
+
+      <CollectionSelect
+        value={collectionIds ?? []}
+        onChange={(next) => setValue('collectionIds', next, { shouldDirty: true })}
+        known={collections}
+        error={errors.collectionIds?.message}
       />
     </section>
   )

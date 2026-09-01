@@ -81,7 +81,7 @@ ok('excludes sold-out products', cards.some((c) => c.stock === 'SOLD_OUT'), fals
 ok('contains no duplicates', new Set(cards.map((c) => c.id)).size, cards.length)
 ok('cards expose exactly the intended keys',
   Object.keys(cards[0] ?? {}).sort(),
-  ['brand', 'compareAtPrice', 'discountPercent', 'id', 'image', 'price', 'slug', 'stock', 'title'])
+  ['brand', 'compareAtPrice', 'discountPercent', 'id', 'image', 'price', 'rating', 'slug', 'stock', 'title'])
 ok('related on an unknown slug is 404', (await call('/products/nope-not-real/related')).status, 404)
 
 console.log(`\n${passed} passed, ${failures.length} failed`)

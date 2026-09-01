@@ -48,7 +48,7 @@ export default function ProductPage() {
         <div className="lg:sticky lg:top-24 lg:self-start">
           {product.brand && (
             <Link
-              to={`/c/${product.brand.slug}`}
+              to={`/categories/${product.brand.slug}`}
               className="text-muted-foreground hover:text-foreground text-xs tracking-[0.12em] uppercase transition-colors"
             >
               {product.brand.name}
@@ -171,7 +171,7 @@ function Breadcrumbs({ product }: { product: { breadcrumbs: { id: string; name: 
         {product.breadcrumbs.map((crumb) => (
           <li key={crumb.id} className="flex items-center gap-1.5">
             <span aria-hidden>/</span>
-            <Link to={`/c/${crumb.slug}`} className="hover:text-foreground transition-colors">
+            <Link to={`/categories/${crumb.slug}`} className="hover:text-foreground transition-colors">
               {crumb.name}
             </Link>
           </li>

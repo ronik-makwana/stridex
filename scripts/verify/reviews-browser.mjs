@@ -13,7 +13,7 @@ const errs=[]; p.on('pageerror',e=>errs.push(String(e)))
 const panel=()=>p.locator('main section').last()
 
 // Guest view
-await p.goto(`${BASE}/p/${SLUG}`,{waitUntil:'networkidle'})
+await p.goto(`${BASE}/products/${SLUG}`,{waitUntil:'networkidle'})
 await p.getByRole('heading',{level:1}).waitFor()
 await panel().scrollIntoViewIfNeeded(); await p.waitForTimeout(600)
 let t=await panel().innerText()
@@ -37,7 +37,7 @@ await p.locator('#email').fill(email); await p.locator('#password').fill('Sneake
 await p.getByRole('button',{name:'Create account'}).click()
 await p.getByRole('heading',{name:'Check your inbox'}).waitFor({timeout:10000})
 
-await p.goto(`${BASE}/p/${SLUG}`,{waitUntil:'networkidle'})
+await p.goto(`${BASE}/products/${SLUG}`,{waitUntil:'networkidle'})
 await p.getByRole('heading',{level:1}).waitFor()
 await panel().scrollIntoViewIfNeeded(); await p.waitForTimeout(600)
 ok('signed-in customer is offered the form', await panel().getByRole('button',{name:'Write a review'}).isVisible())

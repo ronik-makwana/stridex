@@ -3,6 +3,7 @@ import type {
   AttributeValue,
   Brand,
   Category,
+  EntityStatus,
   Inventory,
   Prisma,
   Product,
@@ -10,6 +11,7 @@ import type {
   ProductMedia,
   ProductVariant,
   ProductVariantOption,
+  Tag,
   VariantOption,
   VariantOptionValue,
 } from '@shoe/db'
@@ -150,6 +152,12 @@ export function serializeAdminVariant(variant: VariantWithRefs) {
 
 type CategoryRef = Pick<Category, 'id' | 'name' | 'slug'>
 
+type ProductTagRow = { tag: Tag }
+
+type ProductCollectionRow = {
+  collection: { id: string; name: string; slug: string; status: EntityStatus }
+}
+
 type ProductWithExtras = Product & {
   brand?: Pick<Brand, 'id' | 'name' | 'slug'> | null
   category?: CategoryRef | null
@@ -159,6 +167,9 @@ type ProductWithExtras = Product & {
   attributes?: ProductAttributeWithRefs[]
   variantOptions?: ProductVariantOptionWithRefs[]
   variants?: VariantWithRefs[]
+  tags?: ProductTagRow[]
+  /** Manual only — the loader filters them; a dynamic one has nothing to edit. */
+  collections?: ProductCollectionRow[]
   _count?: { variants: number; media: number }
   /** Computed by the service — one grouped query, not one per row. */
   totalStock?: number
@@ -211,6 +222,20 @@ export function serializeAdminProduct(product: ProductWithExtras) {
       ? product.variantOptions.map(serializeAdminProductVariantOption)
       : null,
     variants: product.variants ? product.variants.map(serializeAdminVariant) : null,
+
+    // Flattened out of the join rows: nothing renders a `ProductTag`, and the
+    // editor's chips and picker both want the tag and the collection themselves.
+    tags: product.tags
+      ? product.tags.map((row) => ({ id: row.tag.id, name: row.tag.name, slug: row.tag.slug }))
+      : null,
+    collections: product.collections
+      ? product.collections.map((row) => ({
+          id: row.collection.id,
+          name: row.collection.name,
+          slug: row.collection.slug,
+          status: row.collection.status,
+        }))
+      : null,
 
     createdAt: product.createdAt,
     updatedAt: product.updatedAt,

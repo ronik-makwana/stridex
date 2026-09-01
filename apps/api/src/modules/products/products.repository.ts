@@ -36,6 +36,23 @@ export const variantInclude = {
   },
 } satisfies Prisma.ProductVariantInclude
 
+export const productCollectionInclude = {
+  collection: { select: { id: true, name: true, slug: true, status: true, type: true } },
+} satisfies Prisma.CollectionProductInclude
+
+/**
+ * Manual collections only. A dynamic one decides its membership by running its
+ * rules, so a row here is meaningless to it — and one can be left behind by a
+ * collection that was manual when the product was added and was switched
+ * afterwards. Showing that in the editor's picker would offer a checkbox that
+ * cannot change anything.
+ */
+export const manualCollectionsInclude = {
+  where: { collection: { type: 'MANUAL' } },
+  include: productCollectionInclude,
+  orderBy: { collection: { name: 'asc' } },
+} satisfies Prisma.Product$collectionsArgs
+
 /** Everything the editor renders in one round trip. */
 export const productDetailInclude = {
   brand: { select: brandSelect },
@@ -44,6 +61,8 @@ export const productDetailInclude = {
   attributes: { include: attributeInclude, orderBy: { position: 'asc' } },
   variantOptions: { include: variantOptionInclude, orderBy: { position: 'asc' } },
   variants: { include: variantInclude, orderBy: { position: 'asc' } },
+  tags: { include: { tag: true }, orderBy: { tag: { name: 'asc' } } },
+  collections: manualCollectionsInclude,
 } satisfies Prisma.ProductInclude
 
 export type ProductDetailRecord = Prisma.ProductGetPayload<{

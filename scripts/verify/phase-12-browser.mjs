@@ -14,7 +14,7 @@ const page = await (await browser.newContext({ viewport: { width: 1400, height: 
 const pageErrors = []
 page.on('pageerror', (e) => pageErrors.push(String(e)))
 
-await page.goto(`${BASE}/p/${SLUG}`, { waitUntil: 'networkidle' })
+await page.goto(`${BASE}/products/${SLUG}`, { waitUntil: 'networkidle' })
 await page.getByRole('heading', { level: 1 }).waitFor()
 
 ok('product page renders the title', (await page.getByRole('heading', { level: 1 }).innerText()).includes('Carina'))
@@ -81,7 +81,7 @@ ok('low stock reads "Only a few left", never a count',
 
 // Spec table + related + reviews slot.
 ok('spec table renders attributes', body.includes('specification') && body.includes('upper material'))
-ok('"You may also like" renders cards', (await page.locator('main a[href^="/p/"]').count()) > 0)
+ok('"You may also like" renders cards', (await page.locator('main a[href^="/products/"]').count()) > 0)
 // Reviews are real now, so this asserts the section renders and summarises —
 // not that it is empty, which was only true while it was a placeholder.
 ok('reviews section renders with a summary', body.includes('customer reviews') && /out of 5/.test(body))
@@ -91,14 +91,14 @@ await page.screenshot({ path: `${shots}/12-product.png`, fullPage: true })
 ok('no raw stock count leaked into the page', !/\b\d+\s+(in stock|available|left in stock)\b/i.test(bodyText))
 
 // Single-image product hides the strip entirely.
-await page.goto(`${BASE}/p/${ONE_IMAGE}`, { waitUntil: 'networkidle' })
+await page.goto(`${BASE}/products/${ONE_IMAGE}`, { waitUntil: 'networkidle' })
 await page.getByRole('heading', { level: 1 }).waitFor()
 ok('single-image product hides the thumbnail strip',
    (await page.getByRole('group', { name: 'Product images' }).count()) === 0)
 await page.screenshot({ path: `${shots}/12-one-image.png` })
 
 // A missing product is the 404 page, inside the shell.
-await page.goto(`${BASE}/p/no-such-product-exists`, { waitUntil: 'networkidle' })
+await page.goto(`${BASE}/products/no-such-product-exists`, { waitUntil: 'networkidle' })
 ok('unknown slug renders the 404 page', (await page.locator('main').innerText()).includes('cannot find that page'))
 
 ok('no uncaught JS exceptions', pageErrors.length === 0, pageErrors.slice(0, 2).join(' | '))

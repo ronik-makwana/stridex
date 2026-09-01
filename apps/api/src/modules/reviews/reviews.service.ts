@@ -152,3 +152,39 @@ export async function deleteReview(id: string, userId: string): Promise<void> {
   await loadOwnReview(id, userId)
   await prisma.review.delete({ where: { id } })
 }
+
+/**
+ * Average rating and review count for a page of products, in ONE grouped
+ * query.
+ *
+ * Called once per grid, never once per card: a 24-card page that asked for its
+ * own rating would be 24 round trips to render a row of stars. This is the same
+ * reason there is no denormalised average on `products` — the count is cheap
+ * when it is batched, and a stored column drifts the moment a review is hidden.
+ */
+export async function ratingsForProducts(
+  productIds: string[],
+): Promise<Map<string, { average: number; count: number }>> {
+  const ratings = new Map<string, { average: number; count: number }>()
+  if (productIds.length === 0) return ratings
+
+  const grouped = await prisma.review.groupBy({
+    by: ['productId'],
+    // PUBLISHED only. A hidden review is invisible to everyone but its author,
+    // so it must not move the number on a public card either.
+    where: { productId: { in: productIds }, status: 'PUBLISHED' },
+    _avg: { rating: true },
+    _count: { _all: true },
+  })
+
+  for (const row of grouped) {
+    ratings.set(row.productId, {
+      // One decimal: "4.5", not "4.4999999". Two would imply a precision that
+      // three reviews do not have.
+      average: Number((row._avg.rating ?? 0).toFixed(1)),
+      count: row._count._all,
+    })
+  }
+
+  return ratings
+}

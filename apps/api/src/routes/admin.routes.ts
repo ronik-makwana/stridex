@@ -8,6 +8,7 @@ import { adminCategoriesRouter } from '../modules/categories/admin.categories.ro
 import { adminCollectionsRouter } from '../modules/collections/admin.collections.routes.js'
 import { adminInventoryRouter } from '../modules/inventory/admin.inventory.routes.js'
 import { adminProductsRouter } from '../modules/products/admin.products.routes.js'
+import { adminTagsRouter } from '../modules/tags/admin.tags.routes.js'
 import { adminVariantOptionsRouter } from '../modules/variant-options/admin.variant-options.routes.js'
 import { adminUploadsRouter } from '../modules/uploads/admin.uploads.routes.js'
 
@@ -26,6 +27,7 @@ adminRouter.use('/categories', adminCategoriesRouter)
 adminRouter.use('/attributes', adminAttributesRouter)
 adminRouter.use('/variant-options', adminVariantOptionsRouter)
 adminRouter.use('/products', adminProductsRouter)
+adminRouter.use('/tags', adminTagsRouter)
 adminRouter.use('/inventory', adminInventoryRouter)
 adminRouter.use('/collections', adminCollectionsRouter)
 adminRouter.use('/uploads', adminUploadsRouter)
