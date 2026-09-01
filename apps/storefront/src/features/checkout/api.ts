@@ -30,6 +30,17 @@ export const checkoutApi = {
   setShippingMethod: (id: string, method: string) =>
     post<CheckoutSession>(`/checkout/${id}/shipping-method`, { method }),
 
+  /**
+   * A code, never an amount. The server answers with the whole re-quoted
+   * session, because a discount changes what the Pay button is about to charge.
+   */
+  applyCoupon: (id: string, code: string) =>
+    post<CheckoutSession>(`/checkout/${id}/coupons`, { code }),
+
+  // `del` already unwraps the envelope, like every other helper here.
+  removeCoupon: (id: string, couponId: string) =>
+    del<CheckoutSession>(`/checkout/${id}/coupons/${couponId}`),
+
   cancel: (id: string) => del(`/checkout/${id}`),
 
   /**

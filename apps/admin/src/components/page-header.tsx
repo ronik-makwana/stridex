@@ -12,12 +12,15 @@ import { ArrowLeft } from 'lucide-react'
  */
 export function PageHeader({
   title,
+  badge,
   description,
   backTo,
   backLabel = 'Back',
   actions,
 }: {
   title: string
+  /** Sits beside the title — a state that belongs to the record, not an action. */
+  badge?: React.ReactNode
   description?: string
   /** Where the ← goes. Omit on list pages. */
   backTo?: string
@@ -38,7 +41,10 @@ export function PageHeader({
           </Link>
         )}
         <div className="min-w-0">
-          <h1 className="truncate text-lg font-semibold tracking-tight">{title}</h1>
+          <div className="flex items-center gap-2.5">
+            <h1 className="truncate text-lg font-semibold tracking-tight">{title}</h1>
+            {badge}
+          </div>
           {description && <p className="text-muted-foreground mt-0.5 text-sm">{description}</p>}
         </div>
       </div>

@@ -117,6 +117,16 @@ export function useCheckoutSession() {
     onSuccess: write,
   })
 
+  const applyCoupon = useMutation({
+    mutationFn: (code: string) => checkoutApi.applyCoupon(sessionId!, code),
+    onSuccess: write,
+  })
+
+  const removeCoupon = useMutation({
+    mutationFn: (couponId: string) => checkoutApi.removeCoupon(sessionId!, couponId),
+    onSuccess: write,
+  })
+
   const cancel = useMutation({
     mutationFn: () => checkoutApi.cancel(sessionId!),
     onSuccess: () => {
@@ -140,6 +150,9 @@ export function useCheckoutSession() {
     isSettingAddress: setAddress.isPending,
     setShippingMethod: setShippingMethod.mutateAsync,
     isSettingShippingMethod: setShippingMethod.isPending,
+    applyCoupon: applyCoupon.mutateAsync,
+    isApplyingCoupon: applyCoupon.isPending,
+    removeCoupon: removeCoupon.mutateAsync,
     cancel: cancel.mutateAsync,
     refetch: query.refetch,
   }

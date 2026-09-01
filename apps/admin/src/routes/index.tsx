@@ -29,6 +29,8 @@ import CustomersPage from './customers'
 import CustomerDetailPage from './customers/customer-detail'
 import ReviewsPage from './reviews'
 import TestimonialsPage from './testimonials'
+import DiscountsPage from './discounts'
+import DiscountEditorPage, { NewDiscountPage } from './discounts/discount-editor'
 
 export const router = createBrowserRouter([
   {
@@ -84,6 +86,10 @@ export const router = createBrowserRouter([
           { path: 'reviews', element: <ReviewsPage /> },
           // Front-page copy, not moderation — see the page's own note.
           { path: 'testimonials', element: <TestimonialsPage /> },
+          { path: 'discounts', element: <DiscountsPage /> },
+          // Before ':id', or the router reads 'new' as a discount id.
+          { path: 'discounts/new', element: <NewDiscountPage /> },
+          { path: 'discounts/:id', element: <DiscountEditorPage /> },
           { path: '*', element: <NotFoundPage /> },
         ],
       },

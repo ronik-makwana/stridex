@@ -1,6 +1,6 @@
 import * as React from 'react'
 import { Link } from 'react-router'
-import { AlertCircle, Check, Clock, Lock } from 'lucide-react'
+import { AlertCircle, Check, Clock, Lock, Tag, X } from 'lucide-react'
 import { useAuth } from '@/lib/auth'
 import { ApiError } from '@/lib/api-client'
 import { formatMoney } from '@/lib/format'
@@ -41,6 +41,9 @@ export default function CheckoutPage() {
     isSettingAddress,
     setShippingMethod,
     isSettingShippingMethod,
+    applyCoupon,
+    isApplyingCoupon,
+    removeCoupon,
     cancel,
     onPaymentAttempted,
   } = useCheckoutSession()
@@ -68,6 +71,9 @@ export default function CheckoutPage() {
       isSettingAddress={isSettingAddress}
       setShippingMethod={setShippingMethod}
       isSettingShippingMethod={isSettingShippingMethod}
+      applyCoupon={applyCoupon}
+      isApplyingCoupon={isApplyingCoupon}
+      removeCoupon={removeCoupon}
       cancel={cancel}
       onPaymentAttempted={onPaymentAttempted}
     />
@@ -83,6 +89,9 @@ function Live({
   isSettingAddress,
   setShippingMethod,
   isSettingShippingMethod,
+  applyCoupon,
+  isApplyingCoupon,
+  removeCoupon,
   cancel,
   onPaymentAttempted,
 }: {
@@ -92,6 +101,9 @@ function Live({
   isSettingAddress: boolean
   setShippingMethod: (method: string) => Promise<unknown>
   isSettingShippingMethod: boolean
+  applyCoupon: (code: string) => Promise<unknown>
+  isApplyingCoupon: boolean
+  removeCoupon: (couponId: string) => Promise<unknown>
   cancel: () => Promise<unknown>
   onPaymentAttempted: () => void
 }) {
@@ -495,17 +507,56 @@ function Live({
                   <p className="text-muted-foreground text-xs">
                     {item.options.map((option) => option.value).join(' / ')} · {item.quantity}
                   </p>
-                  <p className="mt-0.5 tabular-nums">{formatMoney(item.totalPrice)}</p>
+
+                  {/*
+                    The code, against the line it actually came off. A single
+                    saving at the bottom of the summary leaves the customer to
+                    work out which item it applied to — and with several codes
+                    on one cart, that is not something they can work out.
+                  */}
+                  {item.discount && (
+                    <p className="text-muted-foreground mt-1 flex items-center gap-1 text-xs">
+                      <Tag className="size-3 shrink-0" aria-hidden />
+                      <span className="truncate font-mono">{item.discount.code}</span>
+                      <span className="tabular-nums">(−{formatMoney(item.discount.amount)})</span>
+                    </p>
+                  )}
+
+                  <p className="mt-0.5 tabular-nums">
+                    {item.discount ? (
+                      <>
+                        {/* The old price stays visible: a discount nobody can
+                            see the size of is a price they have to take on
+                            trust. */}
+                        <span className="text-muted-foreground mr-1.5 line-through">
+                          {formatMoney(item.totalPrice)}
+                        </span>
+                        {formatMoney(item.discountedTotal)}
+                      </>
+                    ) : (
+                      formatMoney(item.totalPrice)
+                    )}
+                  </p>
                 </div>
               </li>
             ))}
           </ul>
 
-          <dl className="mt-5 space-y-1.5 border-t pt-4 text-sm">
-            <Row label="Subtotal" value={session.subtotal} />
-            {Number(session.discountAmount) > 0 && (
-              <Row label="Discount" value={`-${session.discountAmount}`} />
-            )}
+          <DiscountBox
+            session={session}
+            apply={applyCoupon}
+            isApplying={isApplyingCoupon}
+            remove={removeCoupon}
+          />
+
+          {/*
+            Subtotal is the lines as they will be charged — discounts already
+            taken off. No separate Discount row: each saving is shown against
+            the item it came off, and repeating the total here would be the same
+            money named twice in one column.
+          */}
+          <dl className="mt-4 space-y-1.5 border-t pt-4 text-sm">
+            <Row label="Subtotal" value={session.goodsTotal} />
             <Row
               label="Shipping"
               value={session.shippingAmount}
@@ -562,6 +613,125 @@ function Radio({ checked }: { checked: boolean }) {
     >
       {checked && <span className="bg-foreground size-1.5 rounded-full" />}
     </span>
+  )
+}
+
+/**
+ * The discount box: below the items, above the totals — where a customer looks
+ * once they have checked what they are buying and before they look at what it
+ * costs.
+ *
+ * Several codes can sit here at once. Each shows what it is actually worth
+ * after the server has allocated the lines, so a code that lost every line to a
+ * better one reads **₹0** rather than pretending. That is the one thing that
+ * tells the customer which code to take off.
+ */
+function DiscountBox({
+  session,
+  apply,
+  isApplying,
+  remove,
+}: {
+  session: CheckoutSession
+  apply: (code: string) => Promise<unknown>
+  isApplying: boolean
+  remove: (couponId: string) => Promise<unknown>
+}) {
+  const [code, setCode] = React.useState('')
+  const [problem, setProblem] = React.useState<ApiError | null>(null)
+
+  const submit = async (event: React.FormEvent) => {
+    event.preventDefault()
+    const trimmed = code.trim()
+    if (!trimmed) return
+    setProblem(null)
+    try {
+      await apply(trimmed)
+      setCode('')
+    } catch (error) {
+      // Kept on screen rather than toasted: the customer is about to retype it,
+      // and a message that fades is a message they read half of (§16).
+      setProblem(error instanceof ApiError ? error : null)
+    }
+  }
+
+  return (
+    <div className="mt-5 border-t pt-4">
+      <form onSubmit={(event) => void submit(event)} className="flex gap-2">
+        <label htmlFor="discount-code" className="sr-only">
+          Discount code
+        </label>
+        <input
+          id="discount-code"
+          value={code}
+          onChange={(event) => {
+            setCode(event.target.value)
+            if (problem) setProblem(null)
+          }}
+          placeholder="Discount code"
+          autoComplete="off"
+          autoCapitalize="characters"
+          spellCheck={false}
+          className="border-input placeholder:text-muted-foreground h-10 min-w-0 flex-1 border bg-transparent px-3 text-sm uppercase transition-colors outline-none focus-visible:border-foreground"
+        />
+        <Button type="submit" variant="outline" disabled={isApplying || code.trim() === ''}>
+          {isApplying && <Spinner />}
+          Apply
+        </Button>
+      </form>
+
+      {/*
+        A banner, not a line of red text under the field. A refused code is the
+        one thing on this page the customer has to read and act on — "spend
+        ₹2,000 on eligible items" is a thing they can do something about, and it
+        has to survive them looking away to check their bag (§16).
+      */}
+      {problem && (
+        <Alert variant="destructive" className="mt-3">
+          <AlertCircle />
+          <AlertDescription>
+            <p className="font-medium">{problem.message}</p>
+            {problem.reason && <p className="text-muted-foreground mt-0.5">{problem.reason}</p>}
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {/*
+        Chips only. What each code is worth is shown against the line it came
+        off, and repeating it here would have the customer adding figures up to
+        check they agree — the summary below already does that.
+      */}
+      {session.discounts.length > 0 && (
+        <ul className="mt-3 flex flex-wrap gap-2">
+          {session.discounts.map((discount) => (
+            <li key={discount.couponId}>
+              <span className="bg-secondary inline-flex items-center gap-1.5 px-2 py-1 font-mono text-xs tracking-wide">
+                <Tag className="size-3 shrink-0" aria-hidden />
+                {discount.code}
+                <button
+                  type="button"
+                  onClick={() => void remove(discount.couponId)}
+                  aria-label={`Remove ${discount.code}`}
+                  className="text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  <X className="size-3" />
+                </button>
+              </span>
+              {/*
+                The exception, because it is not a figure but a reason: a code
+                that won nothing looks broken otherwise, and this is what tells
+                the customer it is the one to take off.
+              */}
+              {Number(discount.amount) === 0 && (
+                <span className="text-muted-foreground mt-1 block text-xs">
+                  no saving — another code covers those items
+                </span>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   )
 }
 

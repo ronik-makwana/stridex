@@ -151,7 +151,12 @@ async function capturePayment(paymentId: string, event: ParsedWebhook): Promise<
         status: 'PENDING',
         paymentStatus: 'PAID',
         subtotal: session.subtotal,
-        discountAmount: session.discountAmount,
+        // Every saving, in one figure: the lines' own discounts plus any
+        // order-wide one. Without the first half, subtotal − discount +
+        // shipping would not add up to what was charged.
+        discountAmount: session.items
+          .reduce((sum, item) => sum.plus(item.discountAmount), new Prisma.Decimal(0))
+          .plus(session.discountAmount),
         shippingAmount: session.shippingAmount,
         // The service, not just the charge. An order billed for next-day that
         // ships on the slow van is a refund, and the amount alone does not say
@@ -172,6 +177,7 @@ async function capturePayment(paymentId: string, event: ParsedWebhook): Promise<
             quantity: item.quantity,
             totalPrice: item.totalPrice,
             discountAmount: item.discountAmount,
+            discountCode: item.discountCode,
             orderDiscountAllocated: item.orderDiscountAllocated,
           })),
         },
@@ -241,13 +247,25 @@ async function capturePayment(paymentId: string, event: ParsedWebhook): Promise<
       }
     }
 
-    // Coupons: nothing holds one today, and the loop is here so that the day
-    // one does, consuming it is not a step somebody forgets to add.
+    /**
+     * The codes are spent here, in the same transaction as the order.
+     *
+     * `used_count` is incremented only for a redemption this call actually
+     * moved out of ACTIVE — a webhook delivered twice must not count the same
+     * code twice, and `updateMany`'s count is what says whether this was the
+     * delivery that did it (§8).
+     */
     for (const redemption of session.redemptions) {
-      await tx.couponRedemption.updateMany({
+      const consumed = await tx.couponRedemption.updateMany({
         where: { id: redemption.id, status: 'ACTIVE' },
         data: { status: 'CONSUMED', orderId: order.id },
       })
+      if (consumed.count > 0) {
+        await tx.coupon.update({
+          where: { id: redemption.couponId },
+          data: { usedCount: { increment: 1 } },
+        })
+      }
     }
 
     await tx.payment.update({

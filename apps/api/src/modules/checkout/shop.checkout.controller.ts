@@ -3,6 +3,7 @@ import { unauthorized } from '../../lib/errors.js'
 import { validatedParams } from '../../middleware/validate.js'
 import type { ShopUuidParam } from '../../schemas/shop/common.schema.js'
 import type {
+  ApplyCouponInput,
   CreateCheckoutInput,
   SetCheckoutAddressInput,
   SetShippingMethodInput,
@@ -69,6 +70,22 @@ export const setShippingMethod: RequestHandler = async (req, res) => {
     validatedParams<ShopUuidParam>(req).id,
     (req.body as SetShippingMethodInput).method,
   )
+  res.status(200).json({ data: session })
+}
+
+/** Both answer with the whole re-quoted session: a code changes the total. */
+export const applyCoupon: RequestHandler = async (req, res) => {
+  const session = await checkout.applyCoupon(
+    ownerId(req),
+    validatedParams<ShopUuidParam>(req).id,
+    (req.body as ApplyCouponInput).code,
+  )
+  res.status(200).json({ data: session })
+}
+
+export const removeCoupon: RequestHandler = async (req, res) => {
+  const params = validatedParams<{ id: string; couponId: string }>(req)
+  const session = await checkout.removeCoupon(ownerId(req), params.id, params.couponId)
   res.status(200).json({ data: session })
 }
 

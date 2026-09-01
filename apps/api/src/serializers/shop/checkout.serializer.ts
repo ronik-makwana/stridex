@@ -1,4 +1,4 @@
-import type { Prisma } from '@shoe/db'
+import { Prisma } from '@shoe/db'
 import { money } from './money.js'
 import { serializeShopAddress } from './address.serializer.js'
 
@@ -26,6 +26,7 @@ export type CheckoutSessionRecord = Prisma.CheckoutSessionGetPayload<{
     }
     shippingAddress: true
     billingAddress: true
+    redemptions: { include: { coupon: { select: { id: true; code: true } } } }
     order: { select: { id: true; orderNumber: true } }
   }
 }>
@@ -47,9 +48,19 @@ function serializeItem(item: CheckoutSessionRecord['items'][number]) {
     unitPrice: money(item.unitPrice),
     quantity: item.quantity,
     totalPrice: money(item.totalPrice),
-    /** Both zero until 15.3 hangs coupons off them. */
     discountAmount: money(item.discountAmount),
     orderDiscountAllocated: money(item.orderDiscountAllocated),
+    /**
+     * The code that took money off *this* line, and what it took. Null when
+     * nothing did — which is not the same as zero, and the difference is
+     * whether the row says anything at all.
+     */
+    discount:
+      item.discountCode && item.discountAmount.greaterThan(0)
+        ? { code: item.discountCode, amount: money(item.discountAmount) }
+        : null,
+    /** What this line actually costs after its discount. */
+    discountedTotal: money(item.totalPrice.minus(item.discountAmount)),
   }
 }
 
@@ -70,6 +81,10 @@ export function serializeCheckoutSession(
   session: CheckoutSessionRecord,
   shippingMethods: ShippingMethodOption[] = [],
 ) {
+  const totalDiscount = session.items
+    .reduce((sum, item) => sum.plus(item.discountAmount), new Prisma.Decimal(0))
+    .plus(session.discountAmount)
+
   return {
     id: session.id,
     status: session.status,
@@ -81,6 +96,28 @@ export function serializeCheckoutSession(
     items: session.items.map(serializeItem),
     subtotal: money(session.subtotal),
     discountAmount: money(session.discountAmount),
+    /**
+     * The codes on this checkout and what each is worth *after* allocation —
+     * a code that lost every line to a better one shows zero, which is the
+     * honest answer and the reason to take it off.
+     */
+    discounts: session.redemptions
+      .filter((row) => row.status === 'ACTIVE')
+      .map((row) => ({
+        couponId: row.couponId,
+        code: row.coupon.code,
+        amount: money(row.discountAmount),
+      })),
+    /** Every saving on the order: the lines' own, plus any order-wide one. */
+    totalDiscount: money(totalDiscount),
+    /**
+     * The lines as they will actually be charged — gross less every discount.
+     *
+     * This is what the summary calls Subtotal, and it is computed here rather
+     * than by subtracting two strings in the client, for the same reason every
+     * other figure is (§21).
+     */
+    goodsTotal: money(session.subtotal.minus(totalDiscount)),
     shippingAmount: money(session.shippingAmount),
     /** The chosen service, and what every service would have cost. */
     shippingMethod: session.shippingMethod,

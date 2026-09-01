@@ -730,6 +730,90 @@ export type TestimonialListQuery = {
   status?: EntityStatus
 }
 
+// ─── discounts ───────────────────────────────────────────────────────────────
+
+export type DiscountKind = 'PRODUCT' | 'ORDER' | 'SHIPPING'
+export type DiscountValueType = 'PERCENT' | 'FIXED'
+export type DiscountAppliesTo = 'PRODUCTS' | 'CATEGORIES' | 'COLLECTIONS'
+export type DiscountEligibility = 'ALL_CUSTOMERS' | 'SPECIFIC_CUSTOMERS'
+export type DiscountMinRequirement = 'NONE' | 'PURCHASE_AMOUNT' | 'ITEM_QUANTITY'
+
+/**
+ * Read off the clock, never stored. Deactivating a discount sets its end date
+ * to now; activating clears it. There is no separate status to disagree.
+ */
+export type DiscountState = 'ACTIVE' | 'SCHEDULED' | 'EXPIRED'
+
+export type DiscountStateAction = 'ACTIVATE' | 'DEACTIVATE'
+
+export type DiscountRef = { id: string; name: string }
+export type DiscountCustomerRef = { id: string; name: string; email: string }
+
+export type Discount = {
+  id: string
+  code: string
+  description: string | null
+  kind: DiscountKind
+  type: DiscountValueType
+  value: string
+  maxDiscountAmount: string | null
+
+  appliesTo: DiscountAppliesTo | null
+  products: DiscountRef[]
+  categories: DiscountRef[]
+  collections: DiscountRef[]
+
+  eligibility: DiscountEligibility
+  customers: DiscountCustomerRef[]
+
+  minRequirement: DiscountMinRequirement
+  minCartValue: string | null
+  minQuantity: number | null
+
+  usageLimit: number | null
+  perUserLimit: number | null
+  usedCount: number
+
+  combinesWithProduct: boolean
+  combinesWithOrder: boolean
+  combinesWithShipping: boolean
+
+  startsAt: string
+  endsAt: string | null
+
+  state: DiscountState
+  createdAt: string
+  updatedAt: string
+}
+
+/** The list row: counts instead of the rows themselves. */
+export type DiscountRow = {
+  id: string
+  code: string
+  kind: DiscountKind
+  type: DiscountValueType
+  value: string
+  appliesTo: DiscountAppliesTo | null
+  targetCount: number
+  eligibility: DiscountEligibility
+  customerCount: number
+  usageLimit: number | null
+  usedCount: number
+  startsAt: string
+  endsAt: string | null
+  state: DiscountState
+  createdAt: string
+}
+
+export type DiscountListQuery = {
+  page?: number
+  limit?: number
+  sort?: string
+  q?: string
+  kind?: DiscountKind
+  state?: DiscountState
+}
+
 // ─── reviews ─────────────────────────────────────────────────────────────────
 
 export type ReviewStatus = 'PUBLISHED' | 'HIDDEN'

@@ -14,6 +14,7 @@ import {
   Layers,
   MessageSquare,
   MessageSquareQuote,
+  Percent,
   Settings,
   ShoppingCart,
   Tags,
@@ -50,6 +51,7 @@ const NAV_SECTIONS = [
       { to: '/attributes', label: 'Attributes', icon: ListChecks },
       { to: '/variant-options', label: 'Variant options', icon: Layers },
       { to: '/collections', label: 'Collections', icon: Boxes },
+      { to: '/discounts', label: 'Discounts', icon: Percent },
     ],
   },
   {

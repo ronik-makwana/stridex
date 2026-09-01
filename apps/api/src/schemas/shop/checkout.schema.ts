@@ -39,3 +39,18 @@ export const setShippingMethodSchema = z.object({
 })
 
 export type SetShippingMethodInput = z.infer<typeof setShippingMethodSchema>
+
+/**
+ * A code, and nothing else. What it is worth is the server's answer, not the
+ * client's claim (§21).
+ */
+export const applyCouponSchema = z.object({
+  code: z
+    .string()
+    .trim()
+    .min(1, 'Enter a discount code')
+    .max(40, "That's longer than any code")
+    .transform((value) => value.toUpperCase()),
+})
+
+export type ApplyCouponInput = z.infer<typeof applyCouponSchema>

@@ -3,7 +3,9 @@ import { authenticate } from '../../middleware/auth.js'
 import { requireCustomerSession } from '../../middleware/requireRole.js'
 import { validate } from '../../middleware/validate.js'
 import { shopUuidParamSchema } from '../../schemas/shop/common.schema.js'
+import { z } from 'zod'
 import {
+  applyCouponSchema,
   createCheckoutSchema,
   setCheckoutAddressSchema,
   setShippingMethodSchema,
@@ -40,6 +42,18 @@ shopCheckoutRouter.post(
   '/:id/shipping-method',
   validate({ params: shopUuidParamSchema, body: setShippingMethodSchema }),
   controller.setShippingMethod,
+)
+
+shopCheckoutRouter.post(
+  '/:id/coupons',
+  validate({ params: shopUuidParamSchema, body: applyCouponSchema }),
+  controller.applyCoupon,
+)
+
+shopCheckoutRouter.delete(
+  '/:id/coupons/:couponId',
+  validate({ params: shopUuidParamSchema.extend({ couponId: z.uuid('Not a valid id') }) }),
+  controller.removeCoupon,
 )
 
 shopCheckoutRouter.delete('/:id', validate({ params: shopUuidParamSchema }), controller.cancel)

@@ -15,6 +15,12 @@ function SelectTrigger({
 }: React.ComponentProps<typeof SelectPrimitive.Trigger> & { size?: 'sm' | 'default' }) {
   return (
     <SelectPrimitive.Trigger
+      /**
+       * Radix renders a plain <button> here and does not set a type, so inside
+       * a <form> the browser treats it as **submit** — opening a dropdown would
+       * save the form. Every select on a form page depends on this line.
+       */
+      type="button"
       data-slot="select-trigger"
       data-size={size}
       className={cn(

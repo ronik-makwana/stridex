@@ -120,6 +120,43 @@ enum HoldStatus {
   CONSUMED
 }
 
+/**
+ * Which of the three things a discount takes money off. The rules for each are
+ * different enough that one flag beats one table per kind: a product discount
+ * reduces the lines it matches, an order discount reduces the cart total, and a
+ * shipping discount reduces the delivery charge.
+ */
+enum DiscountKind {
+  PRODUCT
+  ORDER
+  SHIPPING
+}
+
+/**
+ * What a product discount matches against. Products, or a set they belong to.
+ */
+enum DiscountAppliesTo {
+  PRODUCTS
+  CATEGORIES
+  COLLECTIONS
+}
+
+enum DiscountEligibility {
+  ALL_CUSTOMERS
+  SPECIFIC_CUSTOMERS
+}
+
+/**
+ * The gate before a discount applies at all. Measured against the *matching*
+ * lines for a product discount, not the whole cart — "spend ₹2,000 on running
+ * shoes" is a different promise from "spend ₹2,000".
+ */
+enum DiscountMinRequirement {
+  NONE
+  PURCHASE_AMOUNT
+  ITEM_QUANTITY
+}
+
 enum CouponType {
   PERCENT
   FIXED
@@ -161,6 +198,7 @@ model User {
   reviews                 Review[]
   checkoutSessions        CheckoutSession[]
   couponRedemptions       CouponRedemption[]
+  couponEligibility       CouponCustomer[]
   orderStatusChanges      OrderStatusHistory[]
   inventoryTransactions   InventoryTransaction[]
 
@@ -531,6 +569,7 @@ model Collection {
 
   products CollectionProduct[]
   rules    CollectionRule[]
+  coupons  CouponCollection[]
 
   @@index([status])
   @@map("collections")
@@ -742,6 +781,10 @@ model OrderItem {
    * A catalog markdown is not this. `compare_at_price` is already inside
    * `unit_price`; subtracting it here as well discounts the product twice.
    */
+  /**
+   * /** Snapshot, like every other field here: the code as it was at purchase.
+   */
+  discountCode           String?  @map("discount_code")
   discountAmount         Decimal  @default(0) @map("discount_amount") @db.Decimal(12, 2)
   /**
    * This line's share of the order-wide discount, split by largest remainder so
@@ -878,6 +921,13 @@ model CheckoutItem {
   /**
    * This line's own discount. See `order_items.discount_amount`.
    */
+  /**
+   * /**
+   * The code that won this line, as text. At most one: several codes can sit on
+   * a cart, but a line takes the best of them and never two (see the allocator
+   * in discount.engine.ts).
+   */
+  discountCode           String?  @map("discount_code")
   discountAmount         Decimal  @default(0) @map("discount_amount") @db.Decimal(12, 2)
   /**
    * This line's share of the order discount, by largest remainder.
@@ -944,6 +994,12 @@ model Coupon {
    */
   code              String       @unique
   description       String?
+  /**
+   * Every discount here is a code the customer types. Automatic discounts are
+   * a different feature — they need no code, and giving them a unique one to
+   * satisfy this column would be inventing data to fit a table.
+   */
+  kind              DiscountKind @default(PRODUCT)
   type              CouponType
   value             Decimal      @db.Decimal(12, 2)
   minCartValue      Decimal?     @map("min_cart_value") @db.Decimal(12, 2)
@@ -954,16 +1010,44 @@ model Coupon {
   startsAt          DateTime?    @map("starts_at") @db.Timestamptz(6)
   endsAt            DateTime?    @map("ends_at") @db.Timestamptz(6)
   usageLimit        Int?         @map("usage_limit")
+  /**
+   * 1 is the "one use per customer" tick. Left null it is unlimited per person,
+   * bounded only by `usageLimit` across everybody.
+   */
   perUserLimit      Int?         @map("per_user_limit")
   usedCount         Int          @default(0) @map("used_count")
   status            EntityStatus @default(DRAFT)
   createdAt         DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt         DateTime     @updatedAt @map("updated_at") @db.Timestamptz(6)
 
+  /**
+   * PRODUCT discounts only. Null on an order or shipping discount, which apply
+   * to the cart rather than to anything in it.
+   */
+  appliesTo      DiscountAppliesTo?     @map("applies_to")
+  eligibility    DiscountEligibility    @default(ALL_CUSTOMERS)
+  minRequirement DiscountMinRequirement @default(NONE) @map("min_requirement")
+  /**
+   * Read when `minRequirement` is ITEM_QUANTITY; `minCartValue` when it is PURCHASE_AMOUNT.
+   */
+  minQuantity    Int?                   @map("min_quantity")
+
+  /**
+   * Which *other* kinds this one may sit alongside in the same checkout. Three
+   * flags rather than a list, because there are exactly three kinds and a
+   * table of pairs would be a join to answer a yes/no question.
+   */
+  combinesWithProduct  Boolean @default(false) @map("combines_with_product")
+  combinesWithOrder    Boolean @default(false) @map("combines_with_order")
+  combinesWithShipping Boolean @default(false) @map("combines_with_shipping")
+
   products    CouponProduct[]
   categories  CouponCategory[]
+  collections CouponCollection[]
+  customers   CouponCustomer[]
   redemptions CouponRedemption[]
 
+  @@index([kind, status])
   @@index([status, endsAt])
   @@map("coupons")
 }
@@ -1005,6 +1089,34 @@ model CouponCategory {
  * NULLs as distinct, so it constrains confirmed orders — one redemption per
  * coupon per order — while leaving open holds alone.
  */
+model CouponCollection {
+  couponId     String @map("coupon_id") @db.Uuid
+  collectionId String @map("collection_id") @db.Uuid
+
+  coupon     Coupon     @relation(fields: [couponId], references: [id], onDelete: Cascade)
+  collection Collection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+
+  @@id([couponId, collectionId])
+  @@index([collectionId])
+  @@map("coupon_collections")
+}
+
+/**
+ * Named customers, for a discount that is not for everybody. Cascades on the
+ * user: an account that is gone cannot be on a list of who may use a code.
+ */
+model CouponCustomer {
+  couponId String @map("coupon_id") @db.Uuid
+  userId   String @map("user_id") @db.Uuid
+
+  coupon Coupon @relation(fields: [couponId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([couponId, userId])
+  @@index([userId])
+  @@map("coupon_customers")
+}
+
 model CouponRedemption {
   id                String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   couponId          String     @map("coupon_id") @db.Uuid

@@ -355,6 +355,10 @@ export type CheckoutItem = {
   totalPrice: string
   discountAmount: string
   orderDiscountAllocated: string
+  /** The code that took money off this line, or null. At most one per line. */
+  discount: { code: string; amount: string } | null
+  /** What the line costs after its own discount. */
+  discountedTotal: string
 }
 
 /**
@@ -373,6 +377,13 @@ export type ShippingMethodOption = {
   amount: string
 }
 
+/** A code the customer typed, and what it is worth after allocation. */
+export type AppliedDiscount = {
+  couponId: string
+  code: string
+  amount: string
+}
+
 export type CheckoutSession = {
   id: string
   status: CheckoutStatus
@@ -381,6 +392,12 @@ export type CheckoutSession = {
   items: CheckoutItem[]
   subtotal: string
   discountAmount: string
+  /** The codes applied to this checkout, each worth what it won. */
+  discounts: AppliedDiscount[]
+  /** Every saving on the order: the lines' own, plus any order-wide one. */
+  totalDiscount: string
+  /** The lines after their discounts — what the summary calls Subtotal. */
+  goodsTotal: string
   shippingAmount: string
   /** The chosen service's code, and every service priced for this order. */
   shippingMethod: string

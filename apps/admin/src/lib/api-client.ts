@@ -161,6 +161,12 @@ export async function post<T>(url: string, body?: unknown, config?: AxiosRequest
   return response.data.data
 }
 
+/** Full replace. Used where a partial update would be ambiguous — see discounts. */
+export async function put<T>(url: string, body?: unknown, config?: AxiosRequestConfig): Promise<T> {
+  const response = await api.put<{ data: T }>(url, body, config)
+  return response.data.data
+}
+
 export async function patch<T>(url: string, body?: unknown, config?: AxiosRequestConfig): Promise<T> {
   const response = await api.patch<{ data: T }>(url, body, config)
   return response.data.data

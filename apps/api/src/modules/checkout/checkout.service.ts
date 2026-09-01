@@ -11,6 +11,7 @@ import {
   type CheckoutSessionRecord,
   type ShopCheckoutPayload,
 } from '../../serializers/shop/checkout.serializer.js'
+import { allocate, couponInclude, evaluate, sessionLines } from './discount.engine.js'
 import {
   quoteMethods,
   rateFor,
@@ -41,6 +42,13 @@ const TTL_MINUTES = 10
 
 const sessionInclude = {
   items: {
+    /**
+     * A fixed order, because Postgres has no opinion about one: rewriting a
+     * line's discount moves the row, and the summary would reshuffle itself
+     * every time a code was applied. Created order is the order the customer
+     * added them in, and `id` settles the ties within a millisecond.
+     */
+    orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
     include: {
       variant: {
         include: {
@@ -55,6 +63,10 @@ const sessionInclude = {
   },
   shippingAddress: true,
   billingAddress: true,
+  // The applied codes travel with the quote: the summary has to name them, and
+  // a second read to fetch them is a window where the total and the codes
+  // disagree.
+  redemptions: { include: { coupon: { select: { id: true, code: true } } } },
   // Present only once the webhook has landed. It is what a second tab needs in
   // order to redirect to the confirmation instead of trying to pay again (§25).
   order: { select: { id: true, orderNumber: true } },
@@ -168,6 +180,13 @@ export async function releaseSession(
       })
     }
   }
+
+  // The codes go back too. A limited code held by a checkout nobody finished
+  // has to become available again, by the same act that frees the stock.
+  await tx.couponRedemption.updateMany({
+    where: { checkoutSessionId: sessionId, status: 'ACTIVE' },
+    data: { status: status === 'EXPIRED' ? 'EXPIRED' : 'RELEASED' },
+  })
 
   await tx.checkoutSession.updateMany({
     where: { id: sessionId, status: 'ACTIVE' },
@@ -325,6 +344,86 @@ async function quoteShipping(
 }
 
 /**
+ * Re-prices every code on the session and writes the result onto the lines.
+ *
+ * Held together by `coupon_redemptions`: an ACTIVE row is a code the customer
+ * has applied and this session is holding. That is what makes a limited code
+ * count down while three people are still typing their card numbers, instead of
+ * only when they finish (§20).
+ *
+ * A code that no longer qualifies — retired, expired, exhausted by somebody
+ * else — is **released**, not silently ignored. The customer sees it disappear
+ * with the total going up, which is the truth; leaving it on screen worth
+ * nothing would be a discount they think they still have.
+ */
+async function applyDiscounts(tx: Prisma.TransactionClient, sessionId: string): Promise<void> {
+  const session = await tx.checkoutSession.findUniqueOrThrow({
+    where: { id: sessionId },
+    select: { userId: true },
+  })
+
+  const held = await tx.couponRedemption.findMany({
+    where: { checkoutSessionId: sessionId, status: 'ACTIVE' },
+    include: { coupon: { include: couponInclude } },
+    // Applied order: the tie-break between two equal offers is the one the
+    // customer chose first, because it is the only order they can see.
+    orderBy: { createdAt: 'asc' },
+  })
+
+  // Cleared first, so a line that has stopped qualifying does not keep last
+  // quote's discount just because nothing overwrote it.
+  await tx.checkoutItem.updateMany({
+    where: { checkoutSessionId: sessionId },
+    data: { discountAmount: 0, discountCode: null },
+  })
+
+  if (held.length === 0) return
+
+  const lines = await sessionLines(tx, sessionId)
+  const candidates: { couponId: string; perLine: Map<string, Prisma.Decimal> }[] = []
+
+  for (const redemption of held) {
+    const result = await evaluate(tx, redemption.coupon, {
+      userId: session.userId,
+      sessionId,
+      lines,
+    })
+    if (result.ok) {
+      candidates.push({ couponId: redemption.couponId, perLine: result.perLine })
+    } else {
+      await tx.couponRedemption.update({
+        where: { id: redemption.id },
+        data: { status: 'RELEASED', discountAmount: 0 },
+      })
+    }
+  }
+
+  if (candidates.length === 0) return
+
+  const { perLine, perCoupon } = allocate(candidates)
+
+  // The winning code is written onto the line as text, so the summary can name
+  // it — "SAVE20 (−₹240)" against the item it actually came off, rather than a
+  // lump at the bottom the customer has to attribute themselves.
+  const codeOf = new Map(held.map((row) => [row.couponId, row.coupon.code]))
+  for (const [lineId, won] of perLine) {
+    await tx.checkoutItem.update({
+      where: { id: lineId },
+      data: { discountAmount: won.amount, discountCode: codeOf.get(won.couponId) ?? null },
+    })
+  }
+
+  for (const redemption of held) {
+    const amount = perCoupon.get(redemption.couponId)
+    if (amount === undefined) continue
+    await tx.couponRedemption.update({
+      where: { id: redemption.id },
+      data: { discountAmount: amount },
+    })
+  }
+}
+
+/**
  * The one place the money is decided, and the one place it is written.
  *
  * Everything is recomputed from `checkout_items` — the snapshots taken when the
@@ -345,6 +444,12 @@ async function quoteShipping(
  * function, and nowhere else — which is the whole reason it exists as one.
  */
 async function quoteSession(tx: Prisma.TransactionClient, sessionId: string) {
+  // Discounts first: they write `checkout_items.discount_amount`, which the
+  // subtotal below then reads. Recomputed from the codes on every quote rather
+  // than trusted from last time — an admin can retire a code mid-checkout, and
+  // the next quote is where that has to show up.
+  await applyDiscounts(tx, sessionId)
+
   const items = await tx.checkoutItem.findMany({
     where: { checkoutSessionId: sessionId },
     select: { totalPrice: true, discountAmount: true },
@@ -787,6 +892,115 @@ export async function setShippingMethod(
 
   await prisma.$transaction(async (tx) => {
     await tx.checkoutSession.update({ where: { id }, data: { shippingMethod: method } })
+    await quoteSession(tx, id)
+  })
+
+  return present(id)
+}
+
+// ─── discount codes ──────────────────────────────────────────────────────────
+
+/**
+ * Apply a code to a live checkout.
+ *
+ * Validation happens against *this* session's lines, and the answer is a
+ * refusal the customer can act on rather than a generic "invalid" — "spend
+ * ₹2,000 on eligible items" is a thing they can do something about (§16).
+ *
+ * Success writes an ACTIVE redemption and re-quotes. The money is decided in
+ * `quoteSession` like every other figure, not here (§21).
+ */
+export async function applyCoupon(
+  userId: string,
+  id: string,
+  rawCode: string,
+): Promise<ShopCheckoutPayload> {
+  await editableOrThrow(userId, id)
+  const code = rawCode.trim().toUpperCase()
+
+  await prisma.$transaction(async (tx) => {
+    const coupon = await tx.coupon.findUnique({ where: { code }, include: couponInclude })
+    // An unknown code and a code that is not for this customer answer the same
+    // way, on purpose (§18).
+    if (!coupon || coupon.status !== 'ACTIVE') {
+      throw new AppError(422, 'COUPON_NOT_FOUND', "That code isn't valid", {
+        reason: 'Check it for typos.',
+      })
+    }
+
+    const held = await tx.couponRedemption.findMany({
+      where: { checkoutSessionId: id, status: 'ACTIVE' },
+      include: { coupon: { select: { id: true, code: true, kind: true, combinesWithProduct: true } } },
+    })
+
+    if (held.some((row) => row.couponId === coupon.id)) {
+      throw new AppError(409, 'COUPON_ALREADY_APPLIED', `${code} is already applied`)
+    }
+
+    /**
+     * The combinations tick, enforced. A code that says it does not combine
+     * with product discounts cannot sit beside one — in either direction, since
+     * "does not combine" is a property of the offer, not of who arrived first.
+     */
+    const blocker = held.find(
+      (row) => !row.coupon.combinesWithProduct || !coupon.combinesWithProduct,
+    )
+    if (blocker && coupon.kind === 'PRODUCT') {
+      /**
+       * The rejected code is named, not "those codes": the customer typed this
+       * one and is looking at the others in a list beside the box, so the
+       * sentence has to say which of them was refused.
+       */
+      throw new AppError(
+        409,
+        'COUPON_NOT_COMBINABLE',
+        `${code} couldn't be used with your existing discounts.`,
+        { reason: `Remove ${blocker.coupon.code} to use it.` },
+      )
+    }
+
+    const lines = await sessionLines(tx, id)
+    const result = await evaluate(tx, coupon, { userId, sessionId: id, lines })
+    if (!result.ok) {
+      throw new AppError(422, result.refusal.code, result.refusal.message, {
+        reason: result.refusal.reason,
+      })
+    }
+
+    await tx.couponRedemption.create({
+      data: {
+        couponId: coupon.id,
+        userId,
+        checkoutSessionId: id,
+        discountAmount: result.total,
+        status: 'ACTIVE',
+      },
+    })
+
+    await quoteSession(tx, id)
+  })
+
+  return present(id)
+}
+
+/** Taking a code off is the same write in reverse, and re-quotes the same way. */
+export async function removeCoupon(
+  userId: string,
+  id: string,
+  couponId: string,
+): Promise<ShopCheckoutPayload> {
+  await editableOrThrow(userId, id)
+
+  await prisma.$transaction(async (tx) => {
+    const held = await tx.couponRedemption.findFirst({
+      where: { checkoutSessionId: id, couponId, status: 'ACTIVE' },
+    })
+    if (!held) throw notFound('Discount code')
+
+    await tx.couponRedemption.update({
+      where: { id: held.id },
+      data: { status: 'RELEASED', discountAmount: 0 },
+    })
     await quoteSession(tx, id)
   })
 
