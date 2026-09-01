@@ -9,6 +9,7 @@ import { globalLimiter } from './middleware/rateLimit.js'
 import { errorHandler, notFoundHandler } from './middleware/errorHandler.js'
 import { adminRouter } from './routes/admin.routes.js'
 import { shopRouter } from './routes/shop.routes.js'
+import { webhooksRouter } from './routes/webhooks.routes.js'
 
 export function createApp(): Express {
   const app = express()
@@ -38,7 +39,25 @@ export function createApp(): Express {
     }),
   )
 
-  app.use(express.json({ limit: '1mb' }))
+  /**
+   * The raw bytes are kept for webhook routes only.
+   *
+   * A provider signs what it sent, byte for byte. Verifying against
+   * `JSON.stringify(req.body)` verifies a re-serialisation — different key
+   * order, different spacing, different number formatting — and a signature
+   * check that passes on the wrong bytes is worse than none, because it looks
+   * like security (§8).
+   */
+  app.use(
+    express.json({
+      limit: '1mb',
+      verify: (req, _res, buf) => {
+        if (req.url?.startsWith('/api/webhooks/')) {
+          ;(req as express.Request & { rawBody?: Buffer }).rawBody = Buffer.from(buf)
+        }
+      },
+    }),
+  )
   app.use(express.urlencoded({ extended: true, limit: '1mb' }))
   app.use(cookieParser())
 
@@ -62,6 +81,13 @@ export function createApp(): Express {
 
   app.use('/api/admin', adminRouter)
   app.use('/api/storefront', shopRouter)
+
+  /**
+   * Outside both trees, and deliberately so: this is not a customer talking to
+   * us, it is a payment provider — no session, no CORS, no rate limiter that
+   * could drop a confirmation. Its only credential is the signature (§8).
+   */
+  app.use('/api/webhooks', webhooksRouter)
 
   app.use(notFoundHandler)
   app.use(errorHandler)

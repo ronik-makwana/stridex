@@ -76,9 +76,10 @@ async function payableOrThrow(userId: string, checkoutSessionId: string) {
      * would put two live payments on one session (§7, §25).
      *
      * The way out is not another payment. It is to read the session and the
-     * payment back and see how the first one ended (§10, §26) — and if it
-     * failed, the webhook returns the session to ACTIVE and paying is allowed
-     * again.
+     * payment back and see how the first one ended (§10, §26). A decline
+     * cancels the session and hands the stock back, so the customer starts
+     * again from a cart that still has everything in it — and gets a fresh
+     * quote at today's prices rather than paying against a stale one.
      */
     throw new AppError(409, 'CHECKOUT_IN_PROGRESS', 'A payment for this checkout is already in progress', {
       reason: 'Wait for it to finish, or refresh to see how it ended.',
