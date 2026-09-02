@@ -1,4 +1,5 @@
 import { useSearchParams } from 'react-router'
+import { usePageMeta } from '@/lib/use-page-meta'
 import { ProductBrowser } from '@/components/product-browser'
 
 /**
@@ -9,6 +10,10 @@ import { ProductBrowser } from '@/components/product-browser'
 export default function SearchPage() {
   const [searchParams] = useSearchParams()
   const q = searchParams.get('q')?.trim() ?? ''
+
+  // Named by the query, so a tab strip of several searches is tellable apart
+  // and a back-button history reads as what was looked for.
+  usePageMeta({ title: q ? `${q} — search` : 'Search' })
 
   if (!q) {
     return (

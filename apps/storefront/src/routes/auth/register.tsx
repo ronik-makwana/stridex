@@ -1,4 +1,5 @@
 import * as React from 'react'
+import { usePageMeta } from '@/lib/use-page-meta'
 import { Link, Navigate, useSearchParams } from 'react-router'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -71,6 +72,8 @@ function CheckYourEmail({ email, redirect }: { email: string; redirect: string }
 }
 
 export default function RegisterPage() {
+  usePageMeta({ title: 'Create an account' })
+
   const { register: registerAccount, status } = useAuth()
   const [params] = useSearchParams()
   const [banner, setBanner] = React.useState<string | null>(null)

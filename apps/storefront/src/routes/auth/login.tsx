@@ -1,4 +1,5 @@
 import * as React from 'react'
+import { usePageMeta } from '@/lib/use-page-meta'
 import { Link, useNavigate, useSearchParams } from 'react-router'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -26,6 +27,8 @@ function guardMessageFor(redirect: string): string | null {
 }
 
 export default function LoginPage() {
+  usePageMeta({ title: 'Sign in' })
+
   const { login } = useAuth()
   const navigate = useNavigate()
   const [params] = useSearchParams()

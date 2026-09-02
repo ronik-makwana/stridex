@@ -1,4 +1,5 @@
 import * as React from 'react'
+import { usePageMeta } from '@/lib/use-page-meta'
 import { Link } from 'react-router'
 import { Package } from 'lucide-react'
 import { useOrders } from '@/features/orders/queries'
@@ -17,9 +18,7 @@ export default function OrdersPage() {
   const [page, setPage] = React.useState(1)
   const { data, isPending } = useOrders(page)
 
-  React.useEffect(() => {
-    document.title = 'Orders · StrideX'
-  }, [])
+  usePageMeta({ title: 'Orders' })
 
   const orders = data?.data ?? []
   const totalPages = data?.meta.totalPages ?? 1

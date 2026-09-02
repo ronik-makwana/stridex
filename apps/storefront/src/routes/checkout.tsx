@@ -1,4 +1,5 @@
 import * as React from 'react'
+import { usePageMeta } from '@/lib/use-page-meta'
 import { Link } from 'react-router'
 import { AlertCircle, Check, Clock, Lock, Tag, X } from 'lucide-react'
 import { useAuth } from '@/lib/auth'
@@ -48,9 +49,7 @@ export default function CheckoutPage() {
     onPaymentAttempted,
   } = useCheckoutSession()
 
-  React.useEffect(() => {
-    document.title = 'Checkout · StrideX'
-  }, [])
+  usePageMeta({ title: 'Checkout' })
 
   if (isLoading) return <CheckoutSkeleton />
 

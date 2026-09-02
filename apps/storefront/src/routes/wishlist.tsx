@@ -1,4 +1,5 @@
 import * as React from 'react'
+import { usePageMeta } from '@/lib/use-page-meta'
 import { Link } from 'react-router'
 import { toast } from 'sonner'
 import { Heart, X } from 'lucide-react'
@@ -21,9 +22,7 @@ import type { WishlistItem } from '@/types/api'
 export default function WishlistPage() {
   const { items, count, isLoading } = useWishlist()
 
-  React.useEffect(() => {
-    document.title = count > 0 ? `Saved (${count}) · StrideX` : 'Saved · StrideX'
-  }, [count])
+  usePageMeta({ title: count > 0 ? `Saved (${count})` : 'Saved' })
 
   if (isLoading) {
     return (

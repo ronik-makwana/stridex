@@ -12,6 +12,7 @@ import { shopPaymentsRouter } from '../modules/payments/shop.payments.routes.js'
 import { shopProductsRouter } from '../modules/products/shop.products.routes.js'
 import { shopWishlistRouter } from '../modules/wishlist/shop.wishlist.routes.js'
 import { shopSearchRouter } from '../modules/search/shop.search.routes.js'
+import { shopSeoRouter } from '../modules/seo/shop.seo.routes.js'
 import { shopReviewsRouter } from '../modules/reviews/shop.reviews.routes.js'
 
 /**
@@ -39,6 +40,9 @@ shopRouter.use('/categories', shopCategoriesRouter)
 shopRouter.use('/products', shopProductsRouter)
 shopRouter.use('/collections', shopCollectionsRouter)
 shopRouter.use('/search', shopSearchRouter)
+
+// For crawlers. Exposed at the site root by a rewrite in production.
+shopRouter.use('/', shopSeoRouter)
 
 // Editing and deleting your own review, by id. Reading and writing a product's
 // reviews lives under `/products/:slug/reviews`.

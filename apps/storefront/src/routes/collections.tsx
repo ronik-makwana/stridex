@@ -1,10 +1,16 @@
 import { Link } from 'react-router'
+import { usePageMeta } from '@/lib/use-page-meta'
 import { useCollections } from '@/features/catalog/queries'
 import { Skeleton } from '@/components/ui/skeleton'
 
 /** A plain tile index. Empty collections never reach here — the API drops them. */
 export default function CollectionsPage() {
   const { data: collections, isPending } = useCollections()
+
+  usePageMeta({
+    title: 'Collections',
+    description: 'Curated edits from the StrideX catalogue.',
+  })
 
   return (
     <div className="mx-auto max-w-[1400px] px-4 py-10 sm:px-6 lg:px-10">

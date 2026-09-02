@@ -1,4 +1,5 @@
 import * as React from 'react'
+import { usePageMeta } from '@/lib/use-page-meta'
 import { Link } from 'react-router'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -13,6 +14,8 @@ import { Label } from '@/components/ui/label'
 import { Spinner } from '@/components/ui/spinner'
 
 export default function ForgotPasswordPage() {
+  usePageMeta({ title: 'Reset your password' })
+
   const [sent, setSent] = React.useState(false)
   const [banner, setBanner] = React.useState<string | null>(null)
 

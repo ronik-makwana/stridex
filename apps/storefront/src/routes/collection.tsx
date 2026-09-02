@@ -1,4 +1,5 @@
 import { useParams } from 'react-router'
+import { metaSummary, usePageMeta } from '@/lib/use-page-meta'
 import { ApiError } from '@/lib/api-client'
 import { useCollection } from '@/features/catalog/queries'
 import { ProductBrowser } from '@/components/product-browser'
@@ -13,6 +14,11 @@ import NotFoundPage from './not-found'
 export default function CollectionPage() {
   const { slug = '' } = useParams()
   const { data: collection, isPending, error } = useCollection(slug)
+
+  usePageMeta({
+    title: collection ? collection.name : null,
+    description: metaSummary(collection?.description) ?? undefined,
+  })
 
   if (error instanceof ApiError && error.status === 404) return <NotFoundPage />
 

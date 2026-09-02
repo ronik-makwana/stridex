@@ -1,4 +1,5 @@
 import * as React from 'react'
+import { usePageMeta } from '@/lib/use-page-meta'
 import { Link } from 'react-router'
 import { toast } from 'sonner'
 import { Clock, Heart, ShoppingBag } from 'lucide-react'
@@ -23,9 +24,7 @@ export default function CartPage() {
   const wishlist = useWishlist()
   const [movingAll, setMovingAll] = React.useState(false)
 
-  React.useEffect(() => {
-    document.title = itemCount > 0 ? `Cart (${itemCount}) · StrideX` : 'Cart · StrideX'
-  }, [itemCount])
+  usePageMeta({ title: itemCount > 0 ? `Cart (${itemCount})` : 'Cart' })
 
   const act = async (run: () => Promise<unknown>) => {
     try {

@@ -1,4 +1,4 @@
-import * as React from 'react'
+import { usePageMeta } from '@/lib/use-page-meta'
 import { Link, useParams, useSearchParams } from 'react-router'
 import { ChevronLeft, Loader2 } from 'lucide-react'
 import { ApiError } from '@/lib/api-client'
@@ -24,9 +24,7 @@ export default function OrderDetailPage() {
   const confirming = params.get('confirming') === '1'
   const { data: order, isPending, error } = useOrder(orderNumber, { poll: confirming })
 
-  React.useEffect(() => {
-    document.title = orderNumber ? `${orderNumber} · StrideX` : 'Order · StrideX'
-  }, [orderNumber])
+  usePageMeta({ title: orderNumber ? orderNumber : 'Order' })
 
   if (isPending) return <OrderSkeleton />
 

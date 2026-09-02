@@ -1,4 +1,4 @@
-import * as React from 'react'
+import { usePageMeta } from '@/lib/use-page-meta'
 import { Link } from 'react-router'
 import { useHome } from '@/features/home/queries'
 import { CategoryMarquee } from '@/components/category-marquee'
@@ -21,9 +21,12 @@ import { Skeleton } from '@/components/ui/skeleton'
 export default function HomePage() {
   const { data, isPending } = useHome()
 
-  React.useEffect(() => {
-    document.title = 'StrideX | Shoes for the long way round'
-  }, [])
+  usePageMeta({
+    // The one page that is the brand rather than a section of it, so it keeps
+    // the full line instead of taking the ` · StrideX` suffix.
+    title: 'StrideX',
+    description: 'Shoes for the long way round. Free delivery over ₹1999.',
+  })
 
   return (
     <div>

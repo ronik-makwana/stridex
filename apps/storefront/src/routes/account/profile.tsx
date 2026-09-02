@@ -1,4 +1,5 @@
 import * as React from 'react'
+import { usePageMeta } from '@/lib/use-page-meta'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
@@ -50,9 +51,7 @@ type PasswordValues = z.infer<typeof passwordSchema>
 export default function ProfilePage() {
   const { user, reloadUser } = useAuth()
 
-  React.useEffect(() => {
-    document.title = 'Profile · StrideX'
-  }, [])
+  usePageMeta({ title: 'Profile' })
 
   if (!user) return null
 

@@ -6,6 +6,18 @@
     <meta name="theme-color" content="#ffffff" />
     <!-- Unlike admin, this app wants to be indexed. Per-page meta and JSON-LD
          land in Phase 19; the shell only has to not opt out. -->
+    <!--
+      Warms DNS and TLS for the two origins every page needs, during HTML parse
+      rather than after the bundle has parsed and fired its first request. On a
+      mobile connection that is two round trips moved off the critical path.
+
+      The media origin gets no `crossorigin`: images are plain requests. The API
+      does, because its fetches carry credentials, and a preconnect whose mode
+      does not match the request it is warming opens a second connection and
+      helps nothing.
+    -->
+    <link rel="preconnect" href="%VITE_API_ORIGIN%" crossorigin />
+    <link rel="preconnect" href="%VITE_MEDIA_ORIGIN%" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <title>StrideX</title>
   </head>

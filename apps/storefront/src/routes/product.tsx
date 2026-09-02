@@ -1,4 +1,7 @@
 import * as React from 'react'
+import { useReviews } from '@/features/reviews/queries'
+import { productJsonLd, useJsonLd } from '@/lib/use-json-ld'
+import { metaSummary, usePageMeta } from '@/lib/use-page-meta'
 import { Link, useParams } from 'react-router'
 import { toast } from 'sonner'
 import { ApiError } from '@/lib/api-client'
@@ -20,6 +23,46 @@ export default function ProductPage() {
   const { slug = '' } = useParams()
   const { data: product, isPending, error } = useProduct(slug)
   const { data: related } = useRelatedProducts(slug)
+
+  /**
+   * Brand in the title because it is how people search and how they scan a tab
+   * strip — "Campus Oslo Street Sneaker" alone is ambiguous across a catalogue
+   * where several brands make an Oslo.
+   */
+  usePageMeta({
+    title: product ? [product.brand?.name, product.title].filter(Boolean).join(' ') : null,
+    description: metaSummary(product?.description),
+  })
+
+  /**
+   * The same query the reviews panel below runs, so this shares its cache
+   * rather than firing a second request — same key, same page, same sort.
+   * Reviews are visible on this page, which is what makes an aggregate rating
+   * in the markup legitimate rather than a policy violation.
+   */
+  const { data: reviews } = useReviews(slug, 1, 'newest')
+
+  useJsonLd(
+    React.useMemo(
+      () =>
+        product
+          ? productJsonLd(
+              {
+                title: product.title,
+                slug: product.slug,
+                description: product.description,
+                brand: product.brand,
+                images: product.media,
+                variants: product.variants,
+                currency: 'INR',
+                rating: reviews?.meta.summary ?? null,
+              },
+              import.meta.env.VITE_SITE_URL,
+            )
+          : null,
+      [product, reviews],
+    ),
+  )
   const selection = useVariantSelection(product)
   const { add } = useCart()
   const [adding, setAdding] = React.useState(false)

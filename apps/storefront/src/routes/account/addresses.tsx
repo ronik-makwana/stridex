@@ -1,4 +1,5 @@
 import * as React from 'react'
+import { usePageMeta } from '@/lib/use-page-meta'
 import { toast } from 'sonner'
 import { MapPin, Plus } from 'lucide-react'
 import { ApiError } from '@/lib/api-client'
@@ -37,9 +38,7 @@ export default function AddressesPage() {
   // something the customer can simply re-add.
   const [confirming, setConfirming] = React.useState<string | null>(null)
 
-  React.useEffect(() => {
-    document.title = 'Addresses · StrideX'
-  }, [])
+  usePageMeta({ title: 'Addresses' })
 
   const rows = addresses ?? []
 

@@ -1,4 +1,5 @@
 import * as React from 'react'
+import { usePageMeta } from '@/lib/use-page-meta'
 import { Link, useSearchParams } from 'react-router'
 import { CheckCircle2, XCircle } from 'lucide-react'
 import { useMutation } from '@tanstack/react-query'
@@ -18,6 +19,8 @@ import { Spinner } from '@/components/ui/spinner'
  * second click is a step that only loses people.
  */
 export default function VerifyEmailPage() {
+  usePageMeta({ title: 'Confirm your email' })
+
   const [params] = useSearchParams()
   const { reloadUser, isAuthenticated } = useAuth()
   const token = params.get('token') ?? ''

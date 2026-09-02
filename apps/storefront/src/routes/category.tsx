@@ -1,4 +1,5 @@
 import { Link, useParams } from 'react-router'
+import { metaSummary, usePageMeta } from '@/lib/use-page-meta'
 import { ApiError } from '@/lib/api-client'
 import { useCategory } from '@/features/catalog/queries'
 import { ProductBrowser } from '@/components/product-browser'
@@ -9,6 +10,11 @@ import NotFoundPage from './not-found'
 export default function CategoryPage() {
   const { slug = '' } = useParams()
   const { data: category, isPending, error } = useCategory(slug)
+
+  usePageMeta({
+    title: category ? category.name : null,
+    description: metaSummary(category?.description) ?? undefined,
+  })
 
   if (error instanceof ApiError && error.status === 404) return <NotFoundPage />
 
