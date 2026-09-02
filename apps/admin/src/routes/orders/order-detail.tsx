@@ -79,23 +79,63 @@ export default function OrderDetailPage() {
                     <p className="text-muted-foreground mt-1 text-xs tabular-nums">
                       {formatMoney(item.unitPrice)} × {item.quantity}
                       {Number(item.discountAmount) > 0 && ` · −${formatMoney(item.discountAmount)}`}
+                      {item.discountCode && ` (${item.discountCode})`}
                     </p>
                   </div>
-                  <span className="text-sm tabular-nums">{formatMoney(item.totalPrice)}</span>
+                  {/* Charged, with the pre-discount figure beside it. */}
+                  <span className="text-sm tabular-nums">
+                    {Number(item.discountAmount) > 0 ? (
+                      <>
+                        {formatMoney(item.discountedTotal)}
+                        <span className="text-muted-foreground ml-1.5 line-through">
+                          {formatMoney(item.totalPrice)}
+                        </span>
+                      </>
+                    ) : (
+                      formatMoney(item.totalPrice)
+                    )}
+                  </span>
                 </div>
               ))}
             </div>
 
             <dl className="space-y-1.5 border-t px-5 py-4 text-sm">
-              <Row label="Subtotal" value={order.subtotal} />
-              {Number(order.discountAmount) > 0 && (
-                <Row label="Discount" value={`-${order.discountAmount}`} />
-              )}
+              {/*
+                The same arithmetic, in the same order, as the checkout summary
+                and the customer's own order page. Support reads this while the
+                customer reads theirs, and two layouts of one order is how a
+                call about a refund becomes a call about a discrepancy.
+
+                Subtotal is the lines as charged — each line's own discount
+                already off, and shown against that line above.
+              */}
+              <Row label="Subtotal" value={order.goodsTotal} />
+
+              {/* No line to show it against, so it gets its own row, by code. */}
+              {order.discounts
+                .filter((discount) => discount.kind === 'ORDER' && Number(discount.amount) > 0)
+                .map((discount) => (
+                  <Row key={discount.code} label={discount.code} value={`-${discount.amount}`} />
+                ))}
+
               <Row label="Shipping" value={order.shippingAmount} />
+
+              {/* Under the rate it came off. */}
+              {order.discounts
+                .filter((discount) => discount.kind === 'SHIPPING' && Number(discount.amount) > 0)
+                .map((discount) => (
+                  <Row key={discount.code} label={discount.code} value={`-${discount.amount}`} />
+                ))}
               <div className="flex items-baseline justify-between border-t pt-2 font-medium">
                 <dt>Total</dt>
                 <dd className="tabular-nums">{formatMoney(order.totalAmount)}</dd>
               </div>
+              {Number(order.discountAmount) > 0 && (
+                <div className="text-muted-foreground flex items-baseline justify-between">
+                  <dt>Total savings</dt>
+                  <dd className="tabular-nums">{formatMoney(order.discountAmount)}</dd>
+                </div>
+              )}
             </dl>
           </section>
 

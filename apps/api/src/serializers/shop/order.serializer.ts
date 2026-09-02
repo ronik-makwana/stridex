@@ -20,8 +20,38 @@ export type ShopOrderRecord = Prisma.OrderGetPayload<{
     addresses: true
     statusHistory: true
     payments: true
+    couponRedemptions: { include: { coupon: { select: { code: true; kind: true } } } }
   }
 }>
+
+/**
+ * The codes that were actually spent, one line each.
+ *
+ * `kind` is what the customer needs to make sense of two discounts on one
+ * order: SAVE10 came off the shoes, FREESHIP came off the delivery, and a
+ * single merged "Discount −₹474.60" makes that unanswerable.
+ */
+/**
+ * The lines as the item column adds up: gross less each line's **own**
+ * discount, and *not* less the order-wide one — the same definition the
+ * checkout summary calls Subtotal.
+ *
+ * An order-wide discount has no line to be shown against, so it gets its own
+ * row underneath. A subtotal that had quietly absorbed it would be a saving the
+ * customer can see nowhere, and an order page that disagreed with the checkout
+ * they just read.
+ */
+function goodsTotal(order: ShopOrderRecord): Prisma.Decimal {
+  return order.items.reduce((total, item) => total.minus(item.discountAmount), order.subtotal)
+}
+
+function serializeDiscounts(order: ShopOrderRecord) {
+  return order.couponRedemptions.map((redemption) => ({
+    code: redemption.coupon.code,
+    kind: redemption.coupon.kind,
+    amount: money(redemption.discountAmount),
+  }))
+}
 
 /** What the timeline draws. Internal notes and the staff member stay in admin. */
 const CUSTOMER_FACING_STATUSES = ['PENDING', 'PROCESSING', 'SHIPPED', 'DELIVERED'] as const
@@ -40,6 +70,14 @@ function serializeItem(item: ShopOrderRecord['items'][number]) {
     quantity: item.quantity,
     totalPrice: money(item.totalPrice),
     discountAmount: money(item.discountAmount),
+    /**
+     * The line as charged: its own discount off, the order-wide share not.
+     * Computed here in Decimal rather than subtracted in the browser — two
+     * floats and a currency is how a row renders ₹4,023.1999999.
+     */
+    discountedTotal: money(item.totalPrice.minus(item.discountAmount)),
+    /** Snapshot of the code that discounted this line, if any. */
+    discountCode: item.discountCode,
   }
 }
 
@@ -58,6 +96,10 @@ export function serializeShopOrder(order: ShopOrderRecord) {
     itemCount: order.items.reduce((sum, item) => sum + item.quantity, 0),
     subtotal: money(order.subtotal),
     discountAmount: money(order.discountAmount),
+    goodsTotal: money(goodsTotal(order)),
+    /** The part of `discountAmount` that came off delivery rather than goods. */
+    shippingDiscount: money(order.shippingDiscount),
+    discounts: serializeDiscounts(order),
     shippingAmount: money(order.shippingAmount),
     /** The service that was paid for, resolved to its label. */
     shippingMethod: labelFor(order.shippingMethod),

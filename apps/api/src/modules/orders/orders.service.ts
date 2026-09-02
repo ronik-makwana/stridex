@@ -32,6 +32,16 @@ const orderInclude = {
   addresses: true,
   statusHistory: true,
   payments: true,
+  /**
+   * Which codes were actually spent on this order, and what each one took off.
+   * `discountAmount` here is per coupon, so the lines sum to the order's total
+   * discount rather than needing to be re-derived from it.
+   */
+  couponRedemptions: {
+    where: { status: 'CONSUMED' },
+    include: { coupon: { select: { code: true, kind: true } } },
+    orderBy: { createdAt: 'asc' },
+  },
 } satisfies Prisma.OrderInclude
 
 export async function findMany(

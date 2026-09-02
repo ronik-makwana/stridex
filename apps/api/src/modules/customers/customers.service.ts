@@ -1,5 +1,6 @@
 import { Prisma, type UserStatus } from '@shoe/db'
 import { prisma } from '../../lib/prisma.js'
+import { orderInclude } from '../orders/admin.orders.service.js'
 import { notFound } from '../../lib/errors.js'
 import {
   serializeAdminCustomer,
@@ -115,13 +116,8 @@ export async function orders(id: string, page: number, limit: number) {
   const [rows, total] = await prisma.$transaction([
     prisma.order.findMany({
       where,
-      include: {
-        user: { select: { id: true, email: true, firstName: true, lastName: true } },
-        items: true,
-        addresses: true,
-        statusHistory: { include: { changedBy: { select: { id: true, firstName: true, lastName: true } } } },
-        payments: true,
-      },
+      // The admin order include, not a copy of it — see the note on its export.
+      include: orderInclude,
       orderBy: [{ createdAt: 'desc' }, { id: 'asc' }],
       skip: (page - 1) * limit,
       take: limit,

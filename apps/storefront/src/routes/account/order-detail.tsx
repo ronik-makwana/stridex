@@ -121,8 +121,29 @@ export default function OrderDetailPage() {
                 <p className="text-muted-foreground mt-1 text-xs tabular-nums">
                   {formatMoney(item.unitPrice)} × {item.quantity}
                 </p>
+                {item.discountCode && (
+                  <p className="text-success mt-1 text-xs">
+                    {item.discountCode} · −{formatMoney(item.discountAmount)}
+                  </p>
+                )}
               </div>
-              <span className="shrink-0 text-sm tabular-nums">{formatMoney(item.totalPrice)}</span>
+              {/*
+                What was charged, with what it would have been beside it. A
+                discount nobody can see the size of is a price they have to
+                take on trust.
+              */}
+              <span className="shrink-0 text-sm tabular-nums">
+                {Number(item.discountAmount) > 0 ? (
+                  <>
+                    {formatMoney(item.discountedTotal)}
+                    <span className="text-muted-foreground ml-1.5 line-through">
+                      {formatMoney(item.totalPrice)}
+                    </span>
+                  </>
+                ) : (
+                  formatMoney(item.totalPrice)
+                )}
+              </span>
             </div>
           ))}
         </div>
@@ -156,16 +177,55 @@ export default function OrderDetailPage() {
           <section>
             <h2 className="text-xs tracking-[0.14em] uppercase">Summary</h2>
             <dl className="mt-2 space-y-1.5">
-              <Row label="Subtotal" value={order.subtotal} />
-              {Number(order.discountAmount) > 0 && (
-                <Row label="Discount" value={`-${order.discountAmount}`} />
-              )}
+              {/*
+                Laid out exactly as the checkout summary this customer read
+                before paying. An order page that reorganises the same figures
+                invites them to re-add it and find a difference that is not
+                there.
+
+                Subtotal is the lines as charged — product discounts already off,
+                and shown against the item each came from. No merged "Discount"
+                row: that would be the same money named twice in one column.
+              */}
+              <Row label="Subtotal" value={order.goodsTotal} />
+
+              {/*
+                An order discount is against the whole basket, so unlike a
+                product discount there is no line to show it on — it gets a row,
+                named by its code so the customer can tell which one did it.
+              */}
+              {order.discounts
+                .filter((discount) => discount.kind === 'ORDER' && Number(discount.amount) > 0)
+                .map((discount) => (
+                  <Row key={discount.code} label={discount.code} value={`-${discount.amount}`} />
+                ))}
+
               <Row label="Shipping" value={order.shippingAmount} />
+
+              {/* Under the rate it came off, so the two read as one thought. */}
+              {order.discounts
+                .filter((discount) => discount.kind === 'SHIPPING' && Number(discount.amount) > 0)
+                .map((discount) => (
+                  <Row key={discount.code} label={discount.code} value={`-${discount.amount}`} />
+                ))}
+
               <div className="flex items-baseline justify-between border-t pt-2">
                 <dt>Total</dt>
                 <dd className="tabular-nums">{formatMoney(order.totalAmount)}</dd>
               </div>
             </dl>
+
+            {/*
+              Everything saved, in one place, after the customer has read what
+              they paid — the same closing line as checkout. Hidden at zero:
+              "Total savings ₹0" only ever points out what somebody did not get.
+            */}
+            {Number(order.discountAmount) > 0 && (
+              <p className="mt-2 flex items-baseline justify-between">
+                <span className="text-xs tracking-[0.14em] uppercase">Total savings</span>
+                <span className="text-sm tabular-nums">{formatMoney(order.discountAmount)}</span>
+              </p>
+            )}
           </section>
         </aside>
       </div>

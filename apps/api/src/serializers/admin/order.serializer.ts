@@ -22,8 +22,38 @@ export type AdminOrderRecord = Prisma.OrderGetPayload<{
     addresses: true
     statusHistory: { include: { changedBy: { select: { id: true; firstName: true; lastName: true } } } }
     payments: true
+    couponRedemptions: { include: { coupon: { select: { code: true; kind: true } } } }
   }
 }>
+
+/**
+ * The codes spent on this order, one line each with what it took off.
+ *
+ * Admin needs the breakdown for the same reason support does: "why is this
+ * order ₹474.60 cheaper than its items" has to be answerable without opening
+ * the coupon table and reasoning about which rules were live that day.
+ */
+/**
+ * The lines as the item column adds up: gross less each line's **own**
+ * discount, and *not* less the order-wide one — the same definition the
+ * checkout summary calls Subtotal.
+ *
+ * An order-wide discount has no line to be shown against, so it gets its own
+ * row underneath. A subtotal that had quietly absorbed it would be a saving the
+ * customer can see nowhere, and an order page that disagreed with the checkout
+ * they just read.
+ */
+function goodsTotal(order: AdminOrderRecord): Prisma.Decimal {
+  return order.items.reduce((total, item) => total.minus(item.discountAmount), order.subtotal)
+}
+
+function serializeDiscounts(order: AdminOrderRecord) {
+  return order.couponRedemptions.map((redemption) => ({
+    code: redemption.coupon.code,
+    kind: redemption.coupon.kind,
+    amount: money(redemption.discountAmount),
+  }))
+}
 
 const customerOf = (order: AdminOrderRecord) =>
   order.user
@@ -80,11 +110,22 @@ export function serializeAdminOrder(order: AdminOrderRecord) {
       quantity: item.quantity,
       totalPrice: money(item.totalPrice),
       discountAmount: money(item.discountAmount),
+      /**
+       * The line as charged: its own discount off, the order-wide share not.
+       * Computed here in Decimal rather than subtracted in the browser — two
+       * floats and a currency is how a row renders ₹4,023.1999999.
+       */
+      discountedTotal: money(item.totalPrice.minus(item.discountAmount)),
+      /** Snapshot of the code that discounted this line, if any. */
+      discountCode: item.discountCode,
       orderDiscountAllocated: money(item.orderDiscountAllocated),
     })),
 
     subtotal: money(order.subtotal),
     discountAmount: money(order.discountAmount),
+    goodsTotal: money(goodsTotal(order)),
+    shippingDiscount: money(order.shippingDiscount),
+    discounts: serializeDiscounts(order),
     shippingAmount: money(order.shippingAmount),
     /** The service that was paid for, resolved to its label. */
     shippingMethod: labelFor(order.shippingMethod),

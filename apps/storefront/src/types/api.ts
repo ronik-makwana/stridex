@@ -266,6 +266,15 @@ export type Suggestion = {
 }
 // ─── orders ──────────────────────────────────────────────────────────────────
 
+export type DiscountKind = 'PRODUCT' | 'ORDER' | 'SHIPPING'
+
+export type OrderDiscount = {
+  code: string
+  /** What it came off: the goods, the order total, or the delivery. */
+  kind: DiscountKind
+  amount: string
+}
+
 export type OrderStatus = 'PENDING' | 'PROCESSING' | 'SHIPPED' | 'DELIVERED' | 'CANCELLED' | 'REFUNDED'
 export type OrderPaymentStatus = 'PENDING' | 'PAID' | 'PARTIALLY_REFUNDED' | 'REFUNDED' | 'FAILED'
 
@@ -286,6 +295,10 @@ export type OrderItem = {
   quantity: number
   totalPrice: string
   discountAmount: string
+  /** The line as charged: its own discount off, the order-wide share not. */
+  discountedTotal: string
+  /** The code that discounted this line, snapshotted at purchase. */
+  discountCode: string | null
 }
 
 export type Order = {
@@ -298,10 +311,20 @@ export type Order = {
   items: OrderItem[]
   itemCount: number
   subtotal: string
+  /**
+   * The lines as the item column adds up — each line's own discount already
+   * off, the order-wide one not. This is what the summary calls Subtotal, and
+   * it matches the checkout the customer read before paying.
+   */
+  goodsTotal: string
   discountAmount: string
   shippingAmount: string
   /** The delivery service that was paid for, already labelled by the server. */
   shippingMethod: string
+  /** The part of `discountAmount` that came off delivery rather than goods. */
+  shippingDiscount: string
+  /** One entry per code actually spent. Empty when nothing was applied. */
+  discounts: OrderDiscount[]
   totalAmount: string
   currency: string
   shippingAddress: {

@@ -609,6 +609,10 @@ export type OrderItemRow = {
   totalPrice: string
   discountAmount: string
   orderDiscountAllocated: string
+  /** The line as charged: its own discount off, the order-wide share not. */
+  discountedTotal: string
+  /** The code that discounted this line, snapshotted at purchase. */
+  discountCode: string | null
 }
 
 export type OrderAddress = {
@@ -632,8 +636,24 @@ export type OrderHistoryEntry = {
   createdAt: string
 }
 
+export type OrderDiscount = {
+  code: string
+  kind: 'PRODUCT' | 'ORDER' | 'SHIPPING'
+  amount: string
+}
+
 export type Order = OrderRow & {
   items: OrderItemRow[]
+  /** The part of `discountAmount` that came off delivery rather than goods. */
+  shippingDiscount: string
+  /**
+   * The lines as the item column adds up — each line's own discount already
+   * off, the order-wide one not. What the summary calls Subtotal, matching the
+   * checkout the customer read.
+   */
+  goodsTotal: string
+  /** One entry per code actually spent. Empty when nothing was applied. */
+  discounts: OrderDiscount[]
   subtotal: string
   discountAmount: string
   shippingAmount: string

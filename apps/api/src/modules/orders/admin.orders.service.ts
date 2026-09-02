@@ -21,10 +21,21 @@ import { logger } from '../../lib/logger.js'
  * paid could mark an unpaid order paid.
  */
 
-const orderInclude = {
+/**
+ * Exported because `customers.service.ts` renders orders through the same
+ * serializer. It used to keep its own copy of this shape, which is how adding
+ * one relation here broke a screen over there — a serializer and its include
+ * are one thing and belong in one place.
+ */
+export const orderInclude = {
   user: { select: { id: true, email: true, firstName: true, lastName: true } },
   items: true,
   addresses: true,
+  couponRedemptions: {
+    where: { status: 'CONSUMED' },
+    include: { coupon: { select: { code: true, kind: true } } },
+    orderBy: { createdAt: 'asc' },
+  },
   statusHistory: {
     include: { changedBy: { select: { id: true, firstName: true, lastName: true } } },
   },
