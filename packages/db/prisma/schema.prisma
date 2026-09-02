@@ -99,6 +99,64 @@ enum PaymentTransactionType {
   VOID
 }
 
+/**
+ * What the customer asked for, and which rulebook answers it.
+ * A cancellation is a promise not yet kept — nothing has shipped, so it is
+ * self-serve and refunds in full. A return is a promise kept and then undone:
+ * the parcel exists, somebody has to receive it back, and only then does money
+ * move. Two words for two different sets of guards, on one table because they
+ * end in the same place.
+ */
+enum RefundRequestType {
+  CANCELLATION
+  RETURN
+}
+
+/**
+ * REQUESTED → APPROVED → RECEIVED → COMPLETED, with REJECTED and WITHDRAWN as
+ * the two ways out. A cancellation skips to RECEIVED in the same transaction
+ * that cancels the order — there is no parcel to wait for.
+ * RECEIVED is the one that matters: it is the only status that has ever moved
+ * stock, and it is what stops a second click restocking the same pair twice.
+ */
+enum RefundRequestStatus {
+  REQUESTED
+  APPROVED
+  REJECTED
+  WITHDRAWN
+  RECEIVED
+  COMPLETED
+}
+
+/**
+ * The money's own state, and deliberately not the request's. A request can be
+ * RECEIVED while its refund is still PROCESSING at the provider, and the two
+ * must be able to say so independently (§11).
+ * Nothing but a webhook writes SUCCEEDED.
+ */
+enum RefundStatus {
+  PENDING
+  PROCESSING
+  SUCCEEDED
+  FAILED
+}
+
+/**
+ * Why, in the customer's words rather than an operator's. Read on the returns
+ * queue and worth counting: DAMAGED trending on one SKU is a supplier problem,
+ * WRONG_SIZE trending is a size-guide problem, and a free-text box answers
+ * neither question.
+ */
+enum RefundReason {
+  CHANGED_MIND
+  WRONG_SIZE
+  DAMAGED
+  NOT_AS_DESCRIBED
+  WRONG_ITEM
+  LATE_DELIVERY
+  OTHER
+}
+
 enum CheckoutStatus {
   ACTIVE
   PAYMENT_PENDING
@@ -201,6 +259,11 @@ model User {
   couponEligibility       CouponCustomer[]
   orderStatusChanges      OrderStatusHistory[]
   inventoryTransactions   InventoryTransaction[]
+  refundRequests          RefundRequest[]          @relation("RefundRequestCustomer")
+  // Staff, not customers. Named relations because a request points at a person
+  // twice — whose order it is, and who decided — and Prisma cannot guess which.
+  refundDecisions         RefundRequest[]          @relation("RefundRequestDecidedBy")
+  refundsInitiated        Refund[]                 @relation("RefundInitiatedBy")
 
   @@index([role, status])
   @@index([createdAt])
@@ -728,46 +791,53 @@ model Review {
 // ─────────────────────────────── orders ───────────────────────────────
 
 model Order {
-  id               String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  userId           String?       @map("user_id") @db.Uuid
-  orderNumber      String        @unique @map("order_number")
-  status           OrderStatus   @default(PENDING)
-  paymentStatus    PaymentStatus @default(PENDING) @map("payment_status")
-  subtotal         Decimal       @db.Decimal(12, 2)
-  discountAmount   Decimal       @default(0) @map("discount_amount") @db.Decimal(12, 2)
-  shippingAmount   Decimal       @default(0) @map("shipping_amount") @db.Decimal(12, 2)
+  id                 String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId             String?       @map("user_id") @db.Uuid
+  orderNumber        String        @unique @map("order_number")
+  status             OrderStatus   @default(PENDING)
+  paymentStatus      PaymentStatus @default(PENDING) @map("payment_status")
+  subtotal           Decimal       @db.Decimal(12, 2)
+  discountAmount     Decimal       @default(0) @map("discount_amount") @db.Decimal(12, 2)
+  shippingAmount     Decimal       @default(0) @map("shipping_amount") @db.Decimal(12, 2)
   /**
    * The part of `discountAmount` that came off delivery rather than goods.
    */
-  shippingDiscount Decimal       @default(0) @map("shipping_discount") @db.Decimal(12, 2)
+  shippingDiscount   Decimal       @default(0) @map("shipping_discount") @db.Decimal(12, 2)
   /**
    * The delivery service the customer paid for, copied from the session. The
    * warehouse reads this: an order charged for next-day that ships on the slow
    * van is a refund, and the amount alone does not say which was bought.
    */
-  shippingMethod   String        @default("STANDARD") @map("shipping_method")
-  taxAmount        Decimal       @default(0) @map("tax_amount") @db.Decimal(12, 2)
-  totalAmount      Decimal       @map("total_amount") @db.Decimal(12, 2)
-  currency         String        @default("INR")
-  placedAt         DateTime?     @map("placed_at") @db.Timestamptz(6)
+  shippingMethod     String        @default("STANDARD") @map("shipping_method")
+  taxAmount          Decimal       @default(0) @map("tax_amount") @db.Decimal(12, 2)
+  totalAmount        Decimal       @map("total_amount") @db.Decimal(12, 2)
+  currency           String        @default("INR")
+  placedAt           DateTime?     @map("placed_at") @db.Timestamptz(6)
+  /**
+   * When the parcel arrived, stamped by the DELIVERED transition.
+   * Derivable from `order_status_history` and denormalised anyway, because the
+   * return window is counted from it on every order read — and a window whose
+   * deadline needs a join to a history table is a window that gets computed in
+   * the browser instead. DELIVERED can be corrected backwards to SHIPPED, so
+   * this is rewritten by the transition rather than written once.
+   */
+  deliveredAt        DateTime?     @map("delivered_at") @db.Timestamptz(6)
   /**
    * When the confirmation email was handed to the provider — not when it was
    * queued, and not when it was read.
-   *
    * The order is created inside a transaction and the email is queued *after*
    * it commits, because queuing inside would let the worker read an order that
    * does not exist yet, or send a confirmation for one that then rolled back.
    * That leaves a gap: a process that dies between COMMIT and `queue.add` loses
    * the email with nothing recording that it should have sent one.
-   *
    * This column closes it. A sweep finds PAID orders past a grace period with
    * this still null and queues them — the cheap half of a transactional outbox,
    * without the table or the poller, because the failure being guarded against
    * is a missing email rather than a lost payment.
    */
-  confirmationSentAt DateTime?   @map("confirmation_sent_at") @db.Timestamptz(6)
-  createdAt        DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt        DateTime      @updatedAt @map("updated_at") @db.Timestamptz(6)
+  confirmationSentAt DateTime?     @map("confirmation_sent_at") @db.Timestamptz(6)
+  createdAt          DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime      @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
 
@@ -777,6 +847,8 @@ model Order {
   payments          Payment[]
   checkoutSession   CheckoutSession?
   couponRedemptions CouponRedemption[]
+  refundRequests    RefundRequest[]
+  refunds           Refund[]
 
   @@index([status, createdAt])
   @@index([paymentStatus])
@@ -805,6 +877,8 @@ model OrderItem {
   /**
    * /**
    * /**
+   * /**
+   * /**
    * /** Snapshot, like every other field here: the code as it was at purchase.
    */
   discountCode           String?  @map("discount_code")
@@ -820,6 +894,9 @@ model OrderItem {
 
   order   Order           @relation(fields: [orderId], references: [id], onDelete: Cascade)
   variant ProductVariant? @relation(fields: [variantId], references: [id], onDelete: SetNull)
+
+  refundRequestItems RefundRequestItem[]
+  refundItems        RefundItem[]
 
   @@index([orderId])
   @@map("order_items")
@@ -951,6 +1028,8 @@ model CheckoutItem {
    * This line's own discount. See `order_items.discount_amount`.
    */
   /**
+   * /**
+   * /**
    * /**
    * /**
    * /**
@@ -1238,6 +1317,16 @@ model StoreSettings {
    * Null means shipping is never free.
    */
   freeShippingThreshold Decimal? @default(1999) @map("free_shipping_threshold") @db.Decimal(12, 2)
+  /**
+   * How long after delivery a return may be raised. Configuration rather than a
+   * constant: "we are extending returns to 14 days over Diwali" is a decision
+   * somebody makes on a Tuesday, not a deploy.
+   * Read at request time only. A window that shortened must not retroactively
+   * close a return somebody was already entitled to raise yesterday, so the
+   * deadline is recomputed from `delivered_at` on every read and the customer
+   * sees today's rule.
+   */
+  returnWindowDays      Int      @default(7) @map("return_window_days")
   updatedAt             DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   @@map("store_settings")
@@ -1285,6 +1374,7 @@ model Payment {
   // it. Losing the row would lose the evidence that money moved.
   session      CheckoutSession?     @relation(fields: [checkoutSessionId], references: [id], onDelete: SetNull)
   transactions PaymentTransaction[]
+  refunds      Refund[]
 
   @@unique([provider, providerPaymentId])
   @@index([status, createdAt])
@@ -1306,4 +1396,218 @@ model PaymentTransaction {
 
   @@index([paymentId, createdAt])
   @@map("payment_transactions")
+}
+
+// ─────────────────────────────── refunds ───────────────────────────────
+
+/**
+ * What the customer asked for. Not money — intent.
+ * The separation from `refunds` below is the whole design. A request is a
+ * conversation: raised, approved or rejected, a parcel waited for. A refund is
+ * an amount at a provider, which either settled or did not. Collapsing them
+ * into one table means a rejected request and a failed refund become the same
+ * row, and "we said no" stops being distinguishable from "the bank said no".
+ * A cancellation writes one of these too, already RECEIVED, so that both roads
+ * to a refund leave the same paper trail and the returns queue is the one place
+ * to read what was asked and what was decided.
+ */
+model RefundRequest {
+  id      String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  orderId String              @map("order_id") @db.Uuid
+  /**
+   * Denormalised from the order so the queue can scope by customer without a
+   * join, and so the row survives an order whose user was set null.
+   */
+  userId  String              @map("user_id") @db.Uuid
+  type    RefundRequestType
+  status  RefundRequestStatus @default(REQUESTED)
+  reason  RefundReason
+  /**
+   * The customer's own words, optional except when the reason is OTHER — which
+   * the schema enforces, not the database.
+   */
+  comment String?
+
+  /**
+   * What this *would* refund, priced when the request was raised.
+   * Not the refund: the amount is recomputed from the lines at the moment money
+   * actually moves, because an item can be rejected from the return in between.
+   * Kept anyway so the queue can show a figure without re-running the split,
+   * and so a dispute can read what the customer was quoted.
+   */
+  estimatedAmount Decimal @map("estimated_amount") @db.Decimal(12, 2)
+
+  decidedByUserId String?   @map("decided_by_user_id") @db.Uuid
+  decidedAt       DateTime? @map("decided_at") @db.Timestamptz(6)
+  /**
+   * Required on a rejection. The customer is told this, so it is written for them.
+   */
+  decisionNote    String?   @map("decision_note")
+  /**
+   * When the parcel was physically taken back in. The only timestamp that has
+   * ever moved stock.
+   */
+  receivedAt      DateTime? @map("received_at") @db.Timestamptz(6)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  order     Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  user      User  @relation("RefundRequestCustomer", fields: [userId], references: [id], onDelete: Cascade)
+  // SetNull: the record of a decision outlives the account that made it.
+  decidedBy User? @relation("RefundRequestDecidedBy", fields: [decidedByUserId], references: [id], onDelete: SetNull)
+
+  items   RefundRequestItem[]
+  refunds Refund[]
+
+  @@index([orderId, createdAt])
+  // The queue: everything waiting on a person, oldest first.
+  @@index([status, createdAt])
+  @@index([userId, createdAt])
+  @@map("refund_requests")
+}
+
+/**
+ * Which lines, and how many of each.
+ * Quantities rather than whole lines because two pairs of the same shoe on one
+ * line is one row, and sending back one of them is the ordinary case.
+ * `restockedQuantity` and `unsellableQuantity` are what make receiving a parcel
+ * idempotent and partial at the same time: two of three pairs arrived today,
+ * the third next week, and neither the ledger nor a second click can double
+ * count. They sum to at most `quantity`, enforced by the service.
+ */
+model RefundRequestItem {
+  id          String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  requestId   String  @map("request_id") @db.Uuid
+  orderItemId String  @map("order_item_id") @db.Uuid
+  quantity    Int
+  /**
+   * This line's share of the refund, split from the snapshot columns on
+   * `order_items` — its own discount and its share of the order-wide one, both
+   * already allocated at checkout precisely so this sum is not a re-derivation.
+   */
+  amount      Decimal @db.Decimal(12, 2)
+
+  /**
+   * Units that went back into sellable stock.
+   */
+  restockedQuantity  Int @default(0) @map("restocked_quantity")
+  /**
+   * Units that came back and were written off — worn, damaged, not resellable.
+   */
+  unsellableQuantity Int @default(0) @map("unsellable_quantity")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  request   RefundRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  // Restrict, not Cascade: this row says units are owed back. Losing it because
+  // an order line was deleted would leave a refund nothing explains.
+  orderItem OrderItem     @relation(fields: [orderItemId], references: [id], onDelete: Restrict)
+
+  /**
+   * One row per line per request — asking for the same line twice is a bug.
+   */
+  @@unique([requestId, orderItemId])
+  @@index([orderItemId])
+  @@map("refund_request_items")
+}
+
+/**
+ * Money going back, and the mirror of `payments`.
+ * Everything true of a payment is true here: the provider is the authority, the
+ * row is written PENDING before the call, and **nothing but a webhook writes
+ * SUCCEEDED** (§8, §12). A refund this service believed in that the provider
+ * never made is the same failure as an order with no payment behind it.
+ */
+model Refund {
+  id        String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  orderId   String  @map("order_id") @db.Uuid
+  /**
+   * The captured payment this takes money back out of.
+   */
+  paymentId String  @map("payment_id") @db.Uuid
+  /**
+   * Null for a discretionary refund an operator issued against no request —
+   * goodwill, a shipping mistake, a partial for a mark on a box.
+   */
+  requestId String? @map("request_id") @db.Uuid
+
+  amount   Decimal      @db.Decimal(12, 2)
+  currency String       @default("INR")
+  status   RefundStatus @default(PENDING)
+  reason   RefundReason
+  /**
+   * Internal. Shown to staff, never to the customer.
+   */
+  note     String?
+
+  provider         String
+  /**
+   * Null until the provider accepts it. Their id, for the 2am reconciliation.
+   */
+  providerRefundId String? @map("provider_refund_id")
+  /**
+   * Required, unlike a payment's. Every refund in this system is issued by our
+   * own code, so there is always a key to generate — and the unique index is
+   * what makes a double-clicked Refund button move money once (§7, §13).
+   */
+  idempotencyKey   String  @unique @map("idempotency_key")
+
+  /**
+   * Null when the system issued it: a self-serve cancellation.
+   */
+  initiatedByUserId String? @map("initiated_by_user_id") @db.Uuid
+  /**
+   * What the provider said when it declined. Shown to staff, kept for disputes.
+   */
+  failureReason     String? @map("failure_reason")
+  providerResponse  Json?   @map("provider_response")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  order       Order          @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  payment     Payment        @relation(fields: [paymentId], references: [id], onDelete: Restrict)
+  request     RefundRequest? @relation(fields: [requestId], references: [id], onDelete: SetNull)
+  initiatedBy User?          @relation("RefundInitiatedBy", fields: [initiatedByUserId], references: [id], onDelete: SetNull)
+
+  items RefundItem[]
+
+  /**
+   * Their id, once, per provider. The same guard `payments` has, and for the
+   * same reason: a webhook replayed after a restore must find the row rather
+   * than create a second one. Nullable, and Postgres treats NULLs as distinct,
+   * so refunds not yet accepted do not collide.
+   */
+  @@unique([provider, providerRefundId])
+  @@index([orderId, createdAt])
+  @@index([status, createdAt])
+  @@index([paymentId])
+  @@index([requestId])
+  @@map("refunds")
+}
+
+/**
+ * What the money was for, line by line.
+ * A copy of the request's lines rather than a pointer to them, because a refund
+ * can be issued without a request at all, and because an approval may refund
+ * fewer units than were asked for. This is the breakdown that was actually
+ * paid, which is what a credit note has to be able to print years later.
+ */
+model RefundItem {
+  id          String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  refundId    String  @map("refund_id") @db.Uuid
+  orderItemId String  @map("order_item_id") @db.Uuid
+  quantity    Int
+  amount      Decimal @db.Decimal(12, 2)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  refund    Refund    @relation(fields: [refundId], references: [id], onDelete: Cascade)
+  orderItem OrderItem @relation(fields: [orderItemId], references: [id], onDelete: Restrict)
+
+  @@unique([refundId, orderItemId])
+  @@index([orderItemId])
+  @@map("refund_items")
 }
