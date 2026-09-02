@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import type { Request, RequestHandler } from 'express'
 import { prisma } from '../../lib/prisma.js'
 import { validatedParams, validatedQuery } from '../../middleware/validate.js'
@@ -25,6 +26,7 @@ import {
   brandFacet,
   priceBounds,
 } from './shop.facets.service.js'
+import { CACHE, cached } from '../../lib/cache.js'
 import type { ShopProductCardRecord } from '../../serializers/shop/product.serializer.js'
 
 /**
@@ -144,16 +146,42 @@ export const list: RequestHandler = async (req, res) => {
 export const facets: RequestHandler = async (req, res) => {
   const { where, attributeFilters } = await resolveFilter(req)
 
-  const [brand, attributes, price] = await Promise.all([
-    brandFacet(where),
-    attributeFacets(where, attributeFilters),
-    priceBounds(where),
-  ])
-
-  res.status(200).json({
-    data: {
-      facets: [...(brand ? [brand] : []), ...attributes],
-      price,
-    },
+  /**
+   * The most expensive read in the API: eight self-excluded aggregates over the
+   * product table, re-run on every filter click.
+   *
+   * Keyed on the **resolved `where`**, not on the raw query string, and that
+   * distinction is the whole reason this key works. `?brand=a&size=9` and
+   * `?size=9&brand=a` are the same filter and must be one entry; two customers
+   * arriving from differently-ordered links must not each pay for the count.
+   * Serialising the resolved filter normalises ordering for free, because it is
+   * built in a fixed order regardless of how the query arrived.
+   *
+   * Sixty seconds. Long enough to absorb a customer clicking through four
+   * filters in a row — which is the actual traffic pattern — and short enough
+   * that a product going out of stock corrects itself within a minute.
+   */
+  const payload = await cached(CACHE.facets, facetKey(where), 60, async () => {
+    const [brand, attributes, price] = await Promise.all([
+      brandFacet(where),
+      attributeFacets(where, attributeFilters),
+      priceBounds(where),
+    ])
+    return { facets: [...(brand ? [brand] : []), ...attributes], price }
   })
+
+  res.status(200).json({ data: payload })
+}
+
+/**
+ * A short, stable key for a filter object.
+ *
+ * Hashed rather than embedded: a filter with six attribute values serialises to
+ * several hundred bytes, and Redis keys that long cost memory on every entry
+ * and are unreadable in `SCAN` output. SHA-1 because this is a cache key, not a
+ * credential — collisions cost a wrong facet count for sixty seconds, and it is
+ * shorter and faster than SHA-256.
+ */
+function facetKey(where: unknown): string {
+  return createHash('sha1').update(JSON.stringify(where)).digest('hex').slice(0, 16)
 }

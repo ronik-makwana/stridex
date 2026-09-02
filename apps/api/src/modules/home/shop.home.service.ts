@@ -1,5 +1,6 @@
 import { Prisma } from '@shoe/db'
 import { prisma } from '../../lib/prisma.js'
+import { CACHE, cached } from '../../lib/cache.js'
 import { productCardInclude } from '../products/shop.catalog.service.js'
 import { serializeShopProductCard } from '../../serializers/shop/product.serializer.js'
 import { ratingsForProducts } from '../reviews/reviews.service.js'
@@ -142,7 +143,19 @@ async function testimonials(limit = 3) {
   }))
 }
 
-export async function home() {
+/**
+ * Six queries on the single most-requested URL on the site, over merchandising
+ * that changes when somebody curates it — not per request.
+ *
+ * Five minutes rather than the tree's fifteen: this is the page an operator
+ * looks at right after publishing a collection, and a quarter of an hour of
+ * "why isn't it showing" is how people learn to distrust the admin.
+ */
+export function home() {
+  return cached(CACHE.home, 'page', 300, loadHome)
+}
+
+async function loadHome() {
   const [roots, collections, newArrivals, onSale, links, quotes] = await Promise.all([
     prisma.category.findMany({
       where: { parentId: null, status: 'ACTIVE' },

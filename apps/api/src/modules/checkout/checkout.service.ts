@@ -106,6 +106,17 @@ function goodsTotalOf(session: CheckoutSessionRecord): Prisma.Decimal {
  */
 async function present(id: string): Promise<ShopCheckoutPayload> {
   const session = await load(id)
+  /**
+   * Deliberately **not** cached, though it is one row read on every checkout
+   * render and the obvious candidate.
+   *
+   * Its columns are `Decimal`, and `Decimal` does not survive a JSON round
+   * trip — a cache hit would return `shippingFlatRate` as a string, which
+   * `quoteMethods` would carry straight into the price shown against every
+   * delivery option. A single-row primary-key lookup costs a fraction of a
+   * millisecond; that is not worth putting a rehydration bug on the one path
+   * where a wrong number is money.
+   */
   const settings = await prisma.storeSettings.findUnique({ where: { id: 'store' } })
   return serializeCheckoutSession(session, quoteMethods(goodsTotalOf(session), settings))
 }

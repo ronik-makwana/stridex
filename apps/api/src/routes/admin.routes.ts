@@ -1,6 +1,7 @@
 import { Router } from 'express'
 import { authenticate } from '../middleware/auth.js'
 import { requireAdminSession } from '../middleware/requireRole.js'
+import { invalidateOnWrite } from '../middleware/cacheInvalidation.js'
 import { adminAuthRouter } from '../modules/auth/admin.auth.routes.js'
 import { adminAttributesRouter } from '../modules/attributes/admin.attributes.routes.js'
 import { adminBrandsRouter } from '../modules/brands/admin.brands.routes.js'
@@ -31,6 +32,12 @@ adminRouter.use('/auth', adminAuthRouter)
 // applied once here rather than repeated in each feature router, so a new
 // module cannot ship unauthenticated by omission.
 adminRouter.use(authenticate, requireAdminSession)
+
+/**
+ * After the auth wall, before the feature routers: every catalogue write below
+ * drops the customer-facing caches it could have invalidated.
+ */
+adminRouter.use(invalidateOnWrite)
 
 adminRouter.use('/brands', adminBrandsRouter)
 adminRouter.use('/categories', adminCategoriesRouter)

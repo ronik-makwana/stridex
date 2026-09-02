@@ -1,4 +1,5 @@
 import { prisma } from '../../lib/prisma.js'
+import { CACHE, cached } from '../../lib/cache.js'
 import { notFound } from '../../lib/errors.js'
 import type { ShopCategoryNode } from '../../serializers/shop/category.serializer.js'
 
@@ -10,7 +11,18 @@ import type { ShopCategoryNode } from '../../serializers/shop/category.serialize
  * dozen rows, so the alternative (a recursive CTE, or a count query per node)
  * costs more than it saves and is harder to read.
  */
-export async function findShopTree(): Promise<ShopCategoryNode[]> {
+/**
+ * The header nav, on every page in the storefront.
+ *
+ * Two full-table reads plus a recursive roll-up, for data that changes when
+ * somebody edits the category tree — weekly at most. The longest TTL of any
+ * cache here for that reason, and the one with the largest hit rate.
+ */
+export function findShopTree(): Promise<ShopCategoryNode[]> {
+  return cached(CACHE.categoryTree, 'root', 900, loadShopTree)
+}
+
+async function loadShopTree(): Promise<ShopCategoryNode[]> {
   const [categories, counts] = await Promise.all([
     prisma.category.findMany({
       where: { status: 'ACTIVE' },
