@@ -24,5 +24,8 @@
     "db:studio": "npm run studio -w @shoe/db",
     "services:up": "docker compose up -d",
     "services:down": "docker compose down"
+  },
+  "devDependencies": {
+    "playwright": "^1.62.1"
   }
 }

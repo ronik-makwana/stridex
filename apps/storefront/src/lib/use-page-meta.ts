@@ -28,11 +28,26 @@ export function usePageMeta(meta: { title: string | null; description?: string |
   }, [title])
 
   React.useEffect(() => {
-    if (!description) return
+    const existing = document.querySelector<HTMLMetaElement>('meta[name="description"]')
+
+    /**
+     * A route without a description **removes** the tag rather than leaving the
+     * last one standing.
+     *
+     * Descriptions are not component-scoped either, so the early return this
+     * used to do meant a product with no description of its own inherited the
+     * home page's — the PDP told search engines it was "Shoes for the long way
+     * round. Free delivery over ₹1999." An absent description is filled in by
+     * the search engine from page content; a wrong one is published as written.
+     */
+    if (!description) {
+      existing?.remove()
+      return
+    }
 
     // Created on demand: index.html ships without one, because a single static
     // description across a 210-product catalogue is worse than none.
-    let tag = document.querySelector<HTMLMetaElement>('meta[name="description"]')
+    let tag = existing
     if (!tag) {
       tag = document.createElement('meta')
       tag.name = 'description'

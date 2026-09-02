@@ -30,7 +30,13 @@ export default function ProductPage() {
    * where several brands make an Oslo.
    */
   usePageMeta({
-    title: product ? [product.brand?.name, product.title].filter(Boolean).join(' ') : null,
+    /**
+     * The brand is prefixed only when the title does not already carry it.
+     * Catalogue titles are entered as `<Brand> <Model>`, so joining blindly
+     * produced "Khadim's Khadim's Baby Soft Sandal" — which is what the tab,
+     * the bookmark and every shared link would have said.
+     */
+    title: product ? titleWithBrand(product.title, product.brand?.name) : null,
     description: metaSummary(product?.description),
   })
 
@@ -297,4 +303,10 @@ function ProductSkeleton() {
       </div>
     </div>
   )
+}
+
+/** Brand-first, but never twice. Case-insensitive because entry is by hand. */
+function titleWithBrand(title: string, brand: string | undefined): string {
+  if (!brand) return title
+  return title.toLowerCase().startsWith(brand.toLowerCase()) ? title : `${brand} ${title}`
 }
