@@ -6,11 +6,14 @@ import { createQueueConnection, disconnectRedis } from './lib/redis.js'
 import {
   HEARTBEAT_INTERVAL_MS,
   MAINTENANCE_QUEUE,
+  MAIL_QUEUE,
   closeQueues,
   maintenanceQueue,
   writeHeartbeat,
 } from './lib/queue.js'
 import { jobs, jobsByName } from './jobs/index.js'
+import { processMail, type MailJobData } from './modules/mail/mail.service.js'
+import { closeSmtp } from './modules/mail/providers/index.js'
 
 /**
  * The background worker, run as its own process beside `server.ts`.
@@ -92,18 +95,52 @@ export async function startWorker(): Promise<() => Promise<void>> {
     logger.error({ err: error }, 'worker error')
   })
 
+  /**
+   * Mail, on its own worker rather than the maintenance one.
+   *
+   * Different shape of work entirely: sending is IO-bound on a remote SMTP
+   * server, so it wants concurrency, where a sweep is a database transaction
+   * that wants none. Sharing a worker would let a slow provider block the
+   * expiry sweep, and held stock is not something to make wait on an inbox.
+   */
+  const mailWorker = new Worker<MailJobData>(
+    MAIL_QUEUE,
+    async (job) => processMail(job.data),
+    {
+      connection: createQueueConnection('mail-worker'),
+      concurrency: 5,
+    },
+  )
+
+  mailWorker.on('failed', (job, error) => {
+    // The payload is deliberately not logged: from Phase 23 it carries raw
+    // verification and reset tokens.
+    logger.error(
+      { err: error, template: job?.name, attempt: job?.attemptsMade },
+      'mail job failed',
+    )
+  })
+  mailWorker.on('error', (error) => {
+    logger.error({ err: error }, 'mail worker error')
+  })
+
   await writeHeartbeat()
   const heartbeat = setInterval(() => {
     void writeHeartbeat().catch((error) => logger.error({ err: error }, 'heartbeat write failed'))
   }, HEARTBEAT_INTERVAL_MS)
   heartbeat.unref()
 
-  logger.info({ queue: MAINTENANCE_QUEUE, jobs: jobs.map((job) => job.name) }, 'worker started')
+  logger.info(
+    { queues: [MAINTENANCE_QUEUE, MAIL_QUEUE], jobs: jobs.map((job) => job.name) },
+    'worker started',
+  )
 
   return async () => {
     clearInterval(heartbeat)
-    // Waits for the job in flight rather than severing it mid-sweep.
-    await worker.close()
+    // Waits for the jobs in flight rather than severing a sweep or a send.
+    await Promise.allSettled([worker.close(), mailWorker.close()])
+    // After the workers, or an in-flight send loses its transport mid-message.
+    closeSmtp()
   }
 }
 

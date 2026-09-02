@@ -119,6 +119,10 @@ apps/api/src/
 │   ├── orders/
 │   ├── payments/
 │   │   └── webhook.controller.ts     idempotent, signature verified
+│   ├── mail/
+│   │   ├── providers/                MailProvider; smtp + log, chosen by env
+│   │   ├── templates/                layout enforces an HTML + text pair
+│   │   └── mail.service.ts           enqueue on one side, render+send on the other
 │   ├── cart/                         storefront only, incl. merge on login
 │   ├── wishlist/                     storefront only
 │   ├── checkout/                     storefront only

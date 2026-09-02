@@ -53,6 +53,34 @@ const envSchema = z.object({
   PAYMENT_MOCK_SECRET: z.string().min(16).default('mock_webhook_secret_change_me'),
 
   /**
+   * Where the two SPAs actually live, for building links in email.
+   *
+   * `CORS_ORIGINS` is a list of who may call us and deliberately not this: it
+   * has no canonical first entry, and a verification link that changed because
+   * someone reordered an allowlist would be a very quiet bug. An email link is
+   * absolute or it is broken, so these are required rather than derived.
+   */
+  STOREFRONT_URL: z.url(),
+  ADMIN_URL: z.url(),
+
+  /**
+   * Outbound SMTP. Discrete fields rather than a URL because that is the shape
+   * every provider documents — Resend gives you `smtp.resend.com:465`, Brevo
+   * `smtp-relay.brevo.com:587` — and assembling a URL from them only to parse
+   * it again is a round trip that can only lose.
+   *
+   * **An empty `SMTP_HOST` selects the log provider**, which renders the
+   * message and sends nothing. That is the right default for tests and CI,
+   * where no SMTP is listening, and it is why there is no separate
+   * `MAIL_PROVIDER` switch to keep in step with it.
+   */
+  SMTP_HOST: z.string().default(''),
+  SMTP_PORT: z.coerce.number().int().positive().default(1025),
+  SMTP_USER: z.string().default(''),
+  SMTP_PASSWORD: z.string().default(''),
+  MAIL_FROM: z.string().default('StrideX <no-reply@stridex.local>'),
+
+  /**
    * Runs the background worker inside the API process.
    *
    * Defaulted on in development so `npm run dev` stays one command, and off
@@ -75,6 +103,19 @@ const parsed = envSchema
       value.NODE_ENV !== 'production' || value.PAYMENT_MOCK_SECRET !== 'mock_webhook_secret_change_me',
     { path: ['PAYMENT_MOCK_SECRET'], message: 'Set a real webhook secret in production' },
   )
+  // The default sender is a .local address. Mail from it is not delivered, it
+  // is silently dropped by the receiving side — the worst failure shape there
+  // is, because every job reports success.
+  .refine(
+    (value) => value.NODE_ENV !== 'production' || !value.MAIL_FROM.includes('stridex.local'),
+    { path: ['MAIL_FROM'], message: 'Set a real sending address in production' },
+  )
+  // Same failure shape from the other direction: with no host, production would
+  // log every verification link and deliver none, and every job would succeed.
+  .refine((value) => value.NODE_ENV !== 'production' || value.SMTP_HOST.length > 0, {
+    path: ['SMTP_HOST'],
+    message: 'Set an SMTP host in production, or no mail is actually sent',
+  })
   .safeParse(process.env)
 
 if (!parsed.success) {

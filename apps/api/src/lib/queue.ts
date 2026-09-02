@@ -43,6 +43,60 @@ export const maintenanceQueue = new Queue(MAINTENANCE_QUEUE, {
   defaultJobOptions: maintenanceJobOptions,
 })
 
+// ─── mail ────────────────────────────────────────────────────────────────────
+
+/**
+ * One queue for every transactional email, not one per template.
+ *
+ * Per-job `priority` is what separates them instead. Verification and password
+ * reset are interactive — somebody is on a screen waiting for the link — while
+ * an order confirmation is not, and a shared FIFO would let a confirmation
+ * backlog starve the link somebody is refreshing for.
+ */
+export const MAIL_QUEUE = 'mail'
+
+/** Lower runs first, which is BullMQ's convention and the opposite of intuition. */
+export const MAIL_PRIORITY = {
+  /** A person is waiting on this link right now. */
+  INTERACTIVE: 1,
+  /** It should arrive; nobody is watching the clock. */
+  BACKGROUND: 5,
+} as const
+
+const mailJobOptions: JobsOptions = {
+  /**
+   * Five attempts backing off from thirty seconds — roughly 30s, 1m, 2m, 4m.
+   * Provider outages last minutes, so a tighter schedule would spend every
+   * attempt inside the same outage and give up before it ended.
+   */
+  attempts: 5,
+  backoff: { type: 'exponential', delay: 30_000 },
+
+  /**
+   * Completed jobs are discarded rather than kept, and this is the one place
+   * where retention is a security decision rather than a housekeeping one.
+   *
+   * Verification and reset jobs must carry a **raw token** in their payload:
+   * only the SHA-256 is stored, so the worker cannot re-derive it (Phase 23).
+   * A kept completed job is that live credential sitting in Redis with no
+   * expiry.
+   */
+  removeOnComplete: true,
+
+  /**
+   * Failed jobs are the ones worth inspecting, and also the ones holding that
+   * same token — so they are kept by age, not forever. An hour is long enough
+   * to diagnose a failure and short enough that a live token is not sitting
+   * there overnight.
+   */
+  removeOnFail: { age: 3_600 },
+}
+
+export const mailQueue = new Queue(MAIL_QUEUE, {
+  connection: createQueueConnection('mail-queue'),
+  defaultJobOptions: mailJobOptions,
+})
+
 // ─── worker liveness ─────────────────────────────────────────────────────────
 
 /**
@@ -83,7 +137,7 @@ export async function readWorkerHealth(): Promise<WorkerHealth> {
   }
 }
 
-/** Shutdown. Closing the queue closes the connection it was handed. */
+/** Shutdown. Closing a queue closes the connection it was handed. */
 export async function closeQueues(): Promise<void> {
-  await maintenanceQueue.close()
+  await Promise.allSettled([maintenanceQueue.close(), mailQueue.close()])
 }

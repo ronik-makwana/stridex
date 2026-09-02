@@ -127,25 +127,57 @@ restarting it loses no scheduled run.
 A provider, a template layer, and a dev sink. Deliberately no product events yet
 — this phase is about being able to send *an* email, not the right one.
 
-- **`MailProvider` interface**, the same shape argument as `PaymentProvider`:
-  `send(message)`, one implementation per backend, chosen by env.
-- **A log/file provider first**, and permanent, for the same reason the mock
-  payment provider is permanent: bounce handling, a provider timeout mid-send
-  and a retry storm cannot be triggered on demand against a real ESB.
-- **A real provider behind it** — Resend, SES or Postmark. Needs a verified
-  sending domain, which is procurement, not code, and is the long pole here.
-- **Templates**, plain and server-rendered. Every one of them takes ids and
-  reads its own data (see the holds below).
+- **`MailProvider` interface** in `modules/mail/providers/`, laid out exactly
+  like `modules/payments/providers/`: `provider.types.ts`, one file per backend,
+  `index.ts` with `getProvider()`.
+- **SMTP is the only real implementation**, because it is the same protocol
+  everywhere: mailpit on `localhost:1025` in development, Resend or Brevo in
+  production. One implementation covers both, so there is no separate "real"
+  provider to write. An API-based provider is still worth having eventually —
+  it is how bounce and complaint webhooks arrive — and drops in behind the
+  interface when it matters.
+- **A log provider**, permanent, for tests and CI where no SMTP is listening.
+  It renders the message and sends nothing.
+- **The choice is derived, not declared.** An empty `SMTP_HOST` selects the log
+  provider, because with no host there is no way to send and a preference would
+  be a lie. One variable instead of two that can contradict each other.
+- **Templates**, plain and server-rendered, in `modules/mail/templates/`. The
+  `RenderedMail` type makes the **plain-text twin non-optional** — HTML-only
+  mail scores badly with spam filters, and retrofitting text onto twenty
+  templates is far harder than making the first one demand it.
+
+**Absolute URLs are new required env.** `STOREFRONT_URL` and `ADMIN_URL`, because
+the API had no canonical base for either and `CORS_ORIGINS` is an allowlist with
+no meaningful first entry. Storefront is `5174`, admin is `5175`. Phase 23
+cannot build a verification link without these.
 
 **One `mail` queue, not one per template.** Per-job `priority` separates
 interactive mail (verification, reset — somebody is watching a screen) from
 background mail (order confirmation). A shared FIFO would let a confirmation
-backlog starve the link a customer is waiting on. Retries: 5 attempts,
-exponential backoff from ~30s, because provider outages last minutes.
+backlog starve the link somebody is refreshing for. Retries: 5 attempts,
+exponential backoff from 30s, because provider outages last minutes.
 
-**Done when:** `npm run job -w apps/api -- mail.test` puts a rendered message on
-disk through the queue, and pulling the provider's credentials makes it retry
-five times and land in the failed set rather than throwing away the job.
+**Retention on this queue is a security decision, not housekeeping.**
+`removeOnComplete: true`, because Phase 23's verification and reset jobs carry a
+**raw token** — only the SHA-256 is stored, so the worker cannot re-derive it —
+and a kept completed job is that live credential sitting in Redis with no
+expiry. Failed jobs are kept by age (`removeOnFail: { age: 3600 }`): they are
+the ones worth inspecting *and* the ones holding the token, so an hour is long
+enough to diagnose and short enough not to leave one overnight. For the same
+reason the worker's `failed` handler logs the template and attempt number and
+never the payload.
+
+**Mail sends on its own worker**, not the maintenance one. Sending is IO-bound
+on a remote server and wants concurrency; a sweep is a database transaction and
+wants none. Sharing would let a slow provider block the expiry sweep, and held
+stock should not wait on an inbox.
+
+**Done when:** `npm run mail:test -w apps/api -- you@example.com` lands a
+message in mailpit at `localhost:8025` with both an HTML and a plain-text part
+and a working absolute link — having gone through the queue, so a run with no
+worker listening proves nothing and delivers nothing. And pointing `SMTP_PORT`
+at a dead port makes it retry with visible backoff and land in the failed set
+rather than vanishing.
 
 ---
 

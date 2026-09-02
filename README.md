@@ -98,7 +98,8 @@ Seeded only when `NODE_ENV !== 'production'`.
 | Admin | `5175` | |
 | Postgres | `5433` | 5432 was taken locally — change it back in `docker-compose.yml` and the `DATABASE_URL`s if yours is free |
 | MinIO | `9000` / `9001` | object storage for product media |
-| Redis | `6379` | shared rate-limit counters; AOF-persisted. Required — the API will not boot without it |
+| Redis | `6379` | shared rate-limit counters and the job queue; AOF-persisted. Required |
+| Mailpit | `1025` / `8025` | SMTP sink for development — read the mail at :8025 |
 
 ---
 
@@ -224,6 +225,7 @@ npm run dev:worker                            # background jobs, if run separate
 npm run build:api | build:admin | build:shop  # production build
 
 npm run job -w apps/api -- checkout.expiry    # run one job now, no broker
+npm run mail:test -w apps/api -- you@x.com    # send a test email through the queue
 
 npm run db:migrate     # create and apply a migration
 npm run db:deploy      # apply pending migrations
@@ -245,7 +247,7 @@ npm run services:down
 
 | | |
 |---|---|
-| 📧 **Email** | Nothing is sent. Verification tokens are returned by the API instead of mailed |
+| 📧 **Email** | The pipe works — queue, worker, SMTP, templates — but nothing is wired to an event yet. Verification tokens are still returned by the API instead of mailed |
 | 💸 **Refunds** | The statuses exist; no money moves |
 | 💳 **Real gateway** | The provider is a mock that signs its own webhooks — the path is real, the gateway isn't |
 | 🧾 **Tax** | `taxAmount` is written zero, by decision |
