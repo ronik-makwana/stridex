@@ -18,6 +18,7 @@ import {
   Settings,
   ShoppingCart,
   Tags,
+  Undo2,
   Users,
   Warehouse,
 } from 'lucide-react'
@@ -59,6 +60,7 @@ const NAV_SECTIONS = [
     items: [
       { to: '/inventory', label: 'Inventory', icon: Warehouse },
       { to: '/orders', label: 'Orders', icon: ShoppingCart },
+      { to: '/returns', label: 'Returns', icon: Undo2 },
       { to: '/payments', label: 'Payments', icon: CreditCard },
       { to: '/customers', label: 'Customers', icon: Users },
       { to: '/reviews', label: 'Reviews', icon: MessageSquare },

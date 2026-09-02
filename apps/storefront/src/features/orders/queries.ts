@@ -1,6 +1,7 @@
-import { keepPreviousData, useQuery } from '@tanstack/react-query'
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAuth } from '@/lib/auth'
-import { ordersApi } from './api'
+import type { Order, RefundReason } from '@/types/api'
+import { orderActionsApi, ordersApi } from './api'
 
 export const orderKeys = {
   all: ['orders'] as const,
@@ -31,5 +32,51 @@ export function useOrder(orderNumber: string | undefined, options: { poll?: bool
     enabled: isAuthenticated && Boolean(orderNumber),
     refetchInterval: options.poll ? 2_000 : false,
     retry: options.poll ? 5 : false,
+  })
+}
+
+/**
+ * Every write here invalidates both the detail and the list rather than
+ * patching the cache.
+ *
+ * The server recomputes `cancellable`, `returnable`, the timeline, the refund
+ * lines and each item's `returnableQuantity` from the rows it just wrote —
+ * five derived answers — and hand-reconciling them in the browser is how a page
+ * ends up offering a return for a pair that has already gone back.
+ */
+function useInvalidateOrder(orderNumber: string) {
+  const queryClient = useQueryClient()
+  return (order: Order) => {
+    queryClient.setQueryData(orderKeys.detail(orderNumber), order)
+    return queryClient.invalidateQueries({ queryKey: orderKeys.all })
+  }
+}
+
+export function useCancelOrder(orderNumber: string) {
+  const settle = useInvalidateOrder(orderNumber)
+  return useMutation({
+    mutationFn: (body: { reason: RefundReason; comment: string | null }) =>
+      orderActionsApi.cancel(orderNumber, body),
+    onSuccess: settle,
+  })
+}
+
+export function useRequestReturn(orderNumber: string) {
+  const settle = useInvalidateOrder(orderNumber)
+  return useMutation({
+    mutationFn: (body: {
+      items: { orderItemId: string; quantity: number }[]
+      reason: RefundReason
+      comment: string | null
+    }) => orderActionsApi.requestReturn(orderNumber, body),
+    onSuccess: settle,
+  })
+}
+
+export function useWithdrawReturn(orderNumber: string) {
+  const settle = useInvalidateOrder(orderNumber)
+  return useMutation({
+    mutationFn: (requestId: string) => orderActionsApi.withdrawReturn(orderNumber, requestId),
+    onSuccess: settle,
   })
 }

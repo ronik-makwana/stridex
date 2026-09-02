@@ -9,7 +9,10 @@ import { PageHeader } from '@/components/page-header'
 import { EmptyState } from '@/components/empty-state'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
+import { RefundStatusBadge, REFUND_REASON_LABELS } from '@/components/refund-labels'
+import { Badge } from '@/components/ui/badge'
 import { StatusDialog } from './status-dialog'
+import { RefundDialog } from './refund-dialog'
 
 /**
  * One order, rendered from its snapshots.
@@ -23,6 +26,7 @@ export default function OrderDetailPage() {
   const { id } = useParams<{ id: string }>()
   const { data: order, isPending, error } = useOrder(id)
   const [updating, setUpdating] = React.useState(false)
+  const [refunding, setRefunding] = React.useState(false)
 
   if (isPending) return <DetailSkeleton />
 
@@ -52,6 +56,18 @@ export default function OrderDetailPage() {
           <>
             <PaymentStatusBadge status={order.paymentStatus} />
             <OrderStatusBadge status={order.status} />
+            {/*
+              Disabled rather than hidden when nothing is left to refund: the
+              button vanishing would read as "this screen cannot refund", when
+              the truth is that this order already has been.
+            */}
+            <Button
+              variant="outline"
+              onClick={() => setRefunding(true)}
+              disabled={Number(order.refundableAmount) <= 0}
+            >
+              Refund
+            </Button>
             <Button onClick={() => setUpdating(true)} disabled={order.allowedTransitions.length === 0}>
               Update status
             </Button>
@@ -169,6 +185,73 @@ export default function OrderDetailPage() {
             )}
           </section>
 
+          {/*
+            Money going back, under the money that came in. Failed refunds are
+            here too — unlike the customer's view, which hides them — because a
+            refund the provider declined is precisely what somebody has to act
+            on, and it is invisible everywhere else.
+          */}
+          {(order.refunds.length > 0 || order.refundRequests.length > 0) && (
+            <section className="bg-card rounded-lg border">
+              <div className="flex items-center justify-between border-b px-5 py-3">
+                <h2 className="text-sm font-semibold">Refunds</h2>
+                <span className="text-muted-foreground text-xs tabular-nums">
+                  {formatMoney(order.refundableAmount)} still refundable
+                </span>
+              </div>
+              <div className="divide-y">
+                {order.refunds.map((refund) => (
+                  <div key={refund.id} className="px-5 py-3">
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                      <span className="text-sm tabular-nums">{formatMoney(refund.amount)}</span>
+                      <RefundStatusBadge status={refund.status} />
+                      <span className="text-muted-foreground flex-1 text-xs">
+                        {REFUND_REASON_LABELS[refund.reason]} · {formatDateTime(refund.createdAt)} ·{' '}
+                        {refund.initiatedBy?.name ?? 'the customer'}
+                      </span>
+                      {refund.requestId && (
+                        <Link
+                          to={`/returns/${refund.requestId}`}
+                          className="text-xs underline underline-offset-4"
+                        >
+                          Return
+                        </Link>
+                      )}
+                    </div>
+                    {refund.note && (
+                      <p className="text-muted-foreground mt-1 text-xs">{refund.note}</p>
+                    )}
+                    {refund.failureReason && (
+                      <p className="text-destructive mt-1 text-xs">{refund.failureReason}</p>
+                    )}
+                  </div>
+                ))}
+                {/* Requests with no refund yet: raised, or approved and waiting. */}
+                {order.refundRequests
+                  .filter((request) => ['REQUESTED', 'APPROVED'].includes(request.status))
+                  .map((request) => (
+                    <div key={request.id} className="flex items-center gap-3 px-5 py-3">
+                      <Badge variant="outline">
+                        {request.status === 'REQUESTED' ? 'Return requested' : 'Awaiting parcel'}
+                      </Badge>
+                      <span className="text-muted-foreground flex-1 text-xs">
+                        {REFUND_REASON_LABELS[request.reason]} · {formatDate(request.createdAt)}
+                      </span>
+                      <span className="text-sm tabular-nums">
+                        {formatMoney(request.estimatedAmount)}
+                      </span>
+                      <Link
+                        to={`/returns/${request.id}`}
+                        className="text-xs underline underline-offset-4"
+                      >
+                        Open
+                      </Link>
+                    </div>
+                  ))}
+              </div>
+            </section>
+          )}
+
           <section className="bg-card rounded-lg border">
             <h2 className="border-b px-5 py-3 text-sm font-semibold">History</h2>
             <ol className="divide-y">
@@ -214,6 +297,7 @@ export default function OrderDetailPage() {
       </div>
 
       <StatusDialog order={order} open={updating} onOpenChange={setUpdating} />
+      <RefundDialog order={order} open={refunding} onOpenChange={setRefunding} />
     </div>
   )
 }

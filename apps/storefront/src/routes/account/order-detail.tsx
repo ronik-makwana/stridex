@@ -4,6 +4,7 @@ import { ChevronLeft, Loader2 } from 'lucide-react'
 import { ApiError } from '@/lib/api-client'
 import { useOrder } from '@/features/orders/queries'
 import { FULFILMENT_STEPS, OrderStatusBadge } from '@/components/order-status'
+import { ActiveRequestNotice, OrderActions, RefundSummary } from '@/components/order-actions'
 import { formatDate, formatMoney } from '@/lib/format'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
@@ -56,6 +57,14 @@ export default function OrderDetailPage() {
       <p className="text-muted-foreground mt-1 text-sm">
         Placed {formatDate(order.placedAt ?? order.createdAt)}
       </p>
+
+      {/*
+        What can still be done, and what is already in motion — both above the
+        fold, because somebody opening a delivered order that does not fit came
+        here to do exactly one thing.
+      */}
+      <OrderActions order={order} />
+      <ActiveRequestNotice order={order} />
 
       {/* The timeline reads order_status_history and shows customer-facing
           statuses only — internal notes and who changed them stay in admin. */}
@@ -171,6 +180,9 @@ export default function OrderDetailPage() {
               <p className="text-muted-foreground">Paid {formatDate(order.payment.paidAt)}</p>
             </section>
           )}
+
+          {/* Under Payment: money out, then money coming back. */}
+          <RefundSummary order={order} />
 
           <section>
             <h2 className="text-xs tracking-[0.14em] uppercase">Summary</h2>

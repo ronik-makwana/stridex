@@ -278,6 +278,53 @@ export type OrderDiscount = {
 export type OrderStatus = 'PENDING' | 'PROCESSING' | 'SHIPPED' | 'DELIVERED' | 'CANCELLED' | 'REFUNDED'
 export type OrderPaymentStatus = 'PENDING' | 'PAID' | 'PARTIALLY_REFUNDED' | 'REFUNDED' | 'FAILED'
 
+/** Why something is coming back. The wording lives in `REFUND_REASONS`. */
+export type RefundReason =
+  | 'CHANGED_MIND'
+  | 'WRONG_SIZE'
+  | 'DAMAGED'
+  | 'NOT_AS_DESCRIBED'
+  | 'WRONG_ITEM'
+  | 'LATE_DELIVERY'
+  | 'OTHER'
+
+/** The money's own state. PENDING and PROCESSING both mean "on its way". */
+export type RefundStatus = 'PENDING' | 'PROCESSING' | 'SUCCEEDED' | 'FAILED'
+
+export type RefundRequestType = 'CANCELLATION' | 'RETURN'
+export type RefundRequestStatus =
+  | 'REQUESTED'
+  | 'APPROVED'
+  | 'REJECTED'
+  | 'WITHDRAWN'
+  | 'RECEIVED'
+  | 'COMPLETED'
+
+/**
+ * A refund on an order. Failed ones are filtered out server-side — a customer
+ * being shown "failed" beside money they are still owed reads as "you are not
+ * getting this", and it is staff work rather than theirs.
+ */
+export type OrderRefund = {
+  id: string
+  amount: string
+  status: RefundStatus
+  reason: RefundReason
+  requestedAt: string
+  /** Null until the provider confirms it. */
+  settledAt: string | null
+}
+
+/** What is open on an order, so the page can show progress instead of a form. */
+export type OrderRequestSummary = {
+  id: string
+  type: RefundRequestType
+  status: RefundRequestStatus
+  reason: RefundReason
+  amount: string
+  requestedAt: string
+}
+
 /**
  * Every field on a line is a snapshot taken when the order was paid for. This
  * page never joins to today's catalog, which is why an order still reads
@@ -299,6 +346,12 @@ export type OrderItem = {
   discountedTotal: string
   /** The code that discounted this line, snapshotted at purchase. */
   discountCode: string | null
+  /**
+   * How many of these may still be sent back — quantity less anything already
+   * refunded, in-flight refunds included. The return form caps on this rather
+   * than on `quantity`, and it is the server's answer, never a computed one.
+   */
+  returnableQuantity: number
 }
 
 export type Order = {
@@ -338,6 +391,20 @@ export type Order = {
     country: string
   } | null
   payment: { provider: string; method: string | null; amount: string; paidAt: string } | null
+  /**
+   * Whether the buttons are drawn — decided by the server, because a client
+   * that knows the rules is a second copy of them. Both are hints: the
+   * endpoints re-check, since a parcel can ship in the seconds after a render.
+   */
+  cancellable: boolean
+  returnable: boolean
+  /** When the return window shuts. Null until something has been delivered. */
+  returnWindowEndsAt: string | null
+  deliveredAt: string | null
+  activeRequest: OrderRequestSummary | null
+  refunds: OrderRefund[]
+  /** Settled and in-flight together: what the customer is getting back. */
+  refundedTotal: string
   /** Customer-facing statuses only, oldest first. */
   timeline: { status: OrderStatus; at: string }[]
   createdAt: string
@@ -352,6 +419,9 @@ export type OrderCard = {
   placedAt: string | null
   itemCount: number
   totalAmount: string
+  refundedTotal: string
+  /** So the list can badge an open return without a second request. */
+  activeRequest: OrderRequestSummary | null
   thumbnails: ({ url: string; altText: string | null } | null)[]
   createdAt: string
 }

@@ -171,3 +171,60 @@ export async function processMail(job: MailJobData): Promise<{ messageId: string
     text: message.text,
   })
 }
+
+/**
+ * The refund messages.
+ *
+ * Every key here is the **event**, not the customer and not the order. A
+ * cancellation happens once per order, a decision once per request, and a
+ * settlement once per refund — and each of those paths is entered more than
+ * once by design: webhooks retry, reconciliation runs the same handler on a
+ * schedule, and an operator can double-click.
+ */
+
+export async function sendOrderCancelled(args: { to: string; orderId: string }): Promise<void> {
+  await enqueueMail(
+    { template: 'order.cancelled', to: args.to, data: { orderId: args.orderId } },
+    {
+      // Keyed on the order: `order-status.ts` makes CANCELLED terminal, so an
+      // order can only ever be cancelled once.
+      jobId: `order.cancelled-${args.orderId}`,
+      // Somebody is on the page having just clicked Cancel. This is the one
+      // refund message with a person waiting for it.
+      priority: MAIL_PRIORITY.INTERACTIVE,
+    },
+  )
+}
+
+export async function sendReturnApproved(args: { to: string; requestId: string }): Promise<void> {
+  await enqueueMail(
+    { template: 'return.approved', to: args.to, data: { requestId: args.requestId } },
+    {
+      // Keyed on the request. The decision is a conditional write on REQUESTED,
+      // so a second approval never happens — and if it somehow did, the
+      // customer should not be told twice to post the same parcel.
+      jobId: `return.approved-${args.requestId}`,
+    },
+  )
+}
+
+export async function sendReturnRejected(args: { to: string; requestId: string }): Promise<void> {
+  await enqueueMail(
+    { template: 'return.rejected', to: args.to, data: { requestId: args.requestId } },
+    { jobId: `return.rejected-${args.requestId}` },
+  )
+}
+
+export async function sendRefundCompleted(args: { to: string; refundId: string }): Promise<void> {
+  await enqueueMail(
+    { template: 'refund.completed', to: args.to, data: { refundId: args.refundId } },
+    {
+      /**
+       * Keyed on the refund, which is the event — not the order. An order
+       * refunded in two parts owes the customer two of these, and keying on the
+       * order would send the first and swallow the second.
+       */
+      jobId: `refund.completed-${args.refundId}`,
+    },
+  )
+}

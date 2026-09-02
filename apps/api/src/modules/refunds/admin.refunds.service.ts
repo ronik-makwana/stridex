@@ -10,6 +10,8 @@ import {
   type AdminRefundRequestRowPayload,
 } from '../../serializers/admin/refund.serializer.js'
 import * as orders from '../orders/admin.orders.service.js'
+import { sendReturnApproved, sendReturnRejected } from '../mail/mail.service.js'
+import { logger } from '../../lib/logger.js'
 import type { AdminOrderPayload } from '../../serializers/admin/order.serializer.js'
 import type {
   ApproveReturnInput,
@@ -113,6 +115,11 @@ export async function approve(
     },
   })
   if (decided.count === 0) await throwUndecidable(id, 'approved')
+
+  // After the write, because the email tells the customer to post a parcel —
+  // and it must not go out for a decision that did not commit.
+  await queueDecisionEmail(id, 'approved')
+
   return findById(id)
 }
 
@@ -132,6 +139,9 @@ export async function reject(
     },
   })
   if (decided.count === 0) await throwUndecidable(id, 'rejected')
+
+  await queueDecisionEmail(id, 'rejected')
+
   return findById(id)
 }
 
@@ -318,6 +328,26 @@ export async function receive(
   if (refundId) await sendToProvider(refundId)
 
   return findById(id)
+}
+
+/**
+ * Tells the customer what was decided. Swallowed on failure: the decision is
+ * made and recorded, and an operator seeing a 500 would click again and meet a
+ * refusal about a request that is already approved.
+ */
+async function queueDecisionEmail(requestId: string, decision: 'approved' | 'rejected'): Promise<void> {
+  try {
+    const request = await prisma.refundRequest.findUnique({
+      where: { id: requestId },
+      select: { user: { select: { email: true } } },
+    })
+    if (!request?.user.email) return
+
+    const send = decision === 'approved' ? sendReturnApproved : sendReturnRejected
+    await send({ to: request.user.email, requestId })
+  } catch (error) {
+    logger.error({ err: error, requestId, decision }, 'could not queue the return decision email')
+  }
 }
 
 /** Why a conditional decision matched nothing — read only to explain it. */

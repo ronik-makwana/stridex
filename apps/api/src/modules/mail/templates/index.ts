@@ -12,6 +12,15 @@ import {
   renderOrderShipped,
   type OrderMailData,
 } from './order.templates.js'
+import {
+  renderOrderCancelled,
+  renderRefundCompleted,
+  renderReturnApproved,
+  renderReturnRejected,
+  type OrderCancelledMailData,
+  type RefundMailData,
+  type RefundRequestMailData,
+} from './refund.templates.js'
 import type { RenderedMail } from './layout.js'
 
 /**
@@ -35,6 +44,15 @@ export const templates = {
   'auth.welcome': renderWelcome as Renderer<WelcomeData>,
   'order.confirmation': renderOrderConfirmation as Renderer<OrderMailData>,
   'order.shipped': renderOrderShipped as Renderer<OrderMailData>,
+  /**
+   * The refund messages. `refund.completed` is the only one sent by a webhook
+   * rather than by somebody's click — it is the provider confirming, and it is
+   * the only one that may say "refunded" in the past tense.
+   */
+  'order.cancelled': renderOrderCancelled as Renderer<OrderCancelledMailData>,
+  'return.approved': renderReturnApproved as Renderer<RefundRequestMailData>,
+  'return.rejected': renderReturnRejected as Renderer<RefundRequestMailData>,
+  'refund.completed': renderRefundCompleted as Renderer<RefundMailData>,
 } satisfies Record<string, Renderer<never>>
 
 export type TemplateName = keyof typeof templates
@@ -45,3 +63,4 @@ export function isTemplateName(value: string): value is TemplateName {
 
 export type { RenderedMail }
 export type { TestMailData, VerifyEmailData, ResetPasswordData, WelcomeData, OrderMailData }
+export type { OrderCancelledMailData, RefundRequestMailData, RefundMailData }

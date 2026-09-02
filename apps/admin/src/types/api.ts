@@ -642,6 +642,57 @@ export type OrderDiscount = {
   amount: string
 }
 
+/** Why something came back. Labelled in `REFUND_REASON_LABELS`. */
+export type RefundReason =
+  | 'CHANGED_MIND'
+  | 'WRONG_SIZE'
+  | 'DAMAGED'
+  | 'NOT_AS_DESCRIBED'
+  | 'WRONG_ITEM'
+  | 'LATE_DELIVERY'
+  | 'OTHER'
+
+/** The money's own state, and deliberately not the request's. */
+export type RefundStatus = 'PENDING' | 'PROCESSING' | 'SUCCEEDED' | 'FAILED'
+
+export type RefundRequestType = 'CANCELLATION' | 'RETURN'
+export type RefundRequestStatus =
+  | 'REQUESTED'
+  | 'APPROVED'
+  | 'REJECTED'
+  | 'WITHDRAWN'
+  | 'RECEIVED'
+  | 'COMPLETED'
+
+/**
+ * A refund as an operator sees it — failed ones included, unlike the customer's
+ * view. A refund the provider declined is exactly what somebody has to act on.
+ */
+export type OrderRefund = {
+  id: string
+  amount: string
+  status: RefundStatus
+  reason: RefundReason
+  note: string | null
+  provider: string
+  providerRefundId: string | null
+  failureReason: string | null
+  requestId: string | null
+  /** Null when the system issued it: a customer's own cancellation. */
+  initiatedBy: { id: string; name: string | null } | null
+  createdAt: string
+  updatedAt: string
+}
+
+export type OrderRefundRequest = {
+  id: string
+  type: RefundRequestType
+  status: RefundRequestStatus
+  reason: RefundReason
+  estimatedAmount: string
+  createdAt: string
+}
+
 export type Order = OrderRow & {
   items: OrderItemRow[]
   /** The part of `discountAmount` that came off delivery rather than goods. */
@@ -670,9 +721,82 @@ export type Order = OrderRow & {
     createdAt: string
   }[]
   history: OrderHistoryEntry[]
+  refunds: OrderRefund[]
+  refundRequests: OrderRefundRequest[]
+  /**
+   * What may still go back, in-flight refunds already deducted. The refund
+   * dialog caps on this; the server re-checks, because it can move between the
+   * render and the click.
+   */
+  refundableAmount: string
   /** Served by the API: the modal never has to know the state machine. */
   allowedTransitions: { to: OrderStatus; backwards: boolean }[]
   updatedAt: string
+}
+
+// ─── returns ─────────────────────────────────────────────────────────────────
+
+/** One line of a return: what was asked for, and how much has turned up. */
+export type ReturnItem = {
+  id: string
+  orderItemId: string
+  title: string
+  sku: string
+  options: { name: string; value: string }[]
+  quantity: number
+  amount: string
+  restockedQuantity: number
+  unsellableQuantity: number
+  /** Still owed on this line. The receive form opens on it. */
+  outstandingQuantity: number
+}
+
+export type ReturnRequest = {
+  id: string
+  type: RefundRequestType
+  status: RefundRequestStatus
+  reason: RefundReason
+  comment: string | null
+  estimatedAmount: string
+  order: {
+    id: string
+    orderNumber: string
+    status: OrderStatus
+    paymentStatus: OrderPaymentStatus
+    totalAmount: string
+    deliveredAt: string | null
+  }
+  customer: { id: string; email: string; name: string | null }
+  decidedBy: { id: string; name: string | null } | null
+  decidedAt: string | null
+  decisionNote: string | null
+  receivedAt: string | null
+  items: ReturnItem[]
+  refunds: OrderRefund[]
+  createdAt: string
+  updatedAt: string
+}
+
+/** The queue row: enough to triage, not enough to decide. */
+export type ReturnRow = {
+  id: string
+  type: RefundRequestType
+  status: RefundRequestStatus
+  reason: RefundReason
+  estimatedAmount: string
+  order: { id: string; orderNumber: string }
+  customer: { id: string; email: string; name: string | null }
+  itemCount: number
+  createdAt: string
+}
+
+export type ReturnListQuery = {
+  page?: number
+  limit?: number
+  sort?: string
+  q?: string
+  status?: RefundRequestStatus
+  type?: RefundRequestType
 }
 
 export type OrderListQuery = {

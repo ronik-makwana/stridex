@@ -3,6 +3,8 @@ import { AppError, notFound } from '../../lib/errors.js'
 import { SHOP_ERROR_CODES } from '../../schemas/shop/common.schema.js'
 import type { CancelOrderInput, CreateReturnInput } from '../../schemas/shop/refund.schema.js'
 import { findByNumber } from '../orders/orders.service.js'
+import { sendOrderCancelled } from '../mail/mail.service.js'
+import { logger } from '../../lib/logger.js'
 import type { ShopOrderPayload } from '../../serializers/shop/order.serializer.js'
 import {
   isWithinReturnWindow,
@@ -189,7 +191,27 @@ export async function cancelOrder(
   // cancellation that has already happened in the warehouse.
   if (refundId) await sendToProvider(refundId)
 
+  await queueCancellationEmail(order.id, userId)
+
   return findByNumber(userId, orderNumber)
+}
+
+/**
+ * Queued after everything has committed, and swallowed on failure.
+ *
+ * The order is cancelled, the stock is back and the refund is with the
+ * provider. A queue that blinked must not turn that into a 500 the customer
+ * reads as "it did not work" — they would click again, and meet a 409 about a
+ * request that is already open.
+ */
+async function queueCancellationEmail(orderId: string, userId: string): Promise<void> {
+  try {
+    const user = await prisma.user.findUnique({ where: { id: userId }, select: { email: true } })
+    if (!user?.email) return
+    await sendOrderCancelled({ to: user.email, orderId })
+  } catch (error) {
+    logger.error({ err: error, orderId }, 'could not queue the cancellation email')
+  }
 }
 
 function cannotCancelMessage(status: string): string {

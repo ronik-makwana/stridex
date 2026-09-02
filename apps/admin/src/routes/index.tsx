@@ -23,6 +23,8 @@ import CollectionsPage from './collections'
 import CollectionEditorPage, { NewCollectionPage } from './collections/collection-editor'
 import OrdersPage from './orders'
 import OrderDetailPage from './orders/order-detail'
+import ReturnsPage from './returns'
+import ReturnDetailPage from './returns/return-detail'
 import PaymentsPage from './payments'
 import PaymentDetailPage from './payments/payment-detail'
 import CustomersPage from './customers'
@@ -76,6 +78,10 @@ export const router = createBrowserRouter([
           // write here is the status transition.
           { path: 'orders', element: <OrdersPage /> },
           { path: 'orders/:id', element: <OrderDetailPage /> },
+          // Raised by customers, decided here. Receiving a parcel is the only
+          // click in the admin that moves stock and sends money at once.
+          { path: 'returns', element: <ReturnsPage /> },
+          { path: 'returns/:id', element: <ReturnDetailPage /> },
           { path: 'payments', element: <PaymentsPage /> },
           { path: 'payments/:id', element: <PaymentDetailPage /> },
           // Support: read-heavy, two writes, neither of which can act as the

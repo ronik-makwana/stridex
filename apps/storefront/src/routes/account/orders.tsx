@@ -122,6 +122,12 @@ function OrderRow({ order }: { order: OrderCard }) {
         <p className="text-muted-foreground mt-1 text-xs">
           {order.placedAt ? formatDate(order.placedAt) : formatDate(order.createdAt)} ·{' '}
           {order.itemCount} {order.itemCount === 1 ? 'item' : 'items'}
+          {/*
+            An open return is the one thing about an order in this list that is
+            waiting on somebody. It rides on the card payload, so saying it here
+            costs no second request.
+          */}
+          {order.activeRequest?.type === 'RETURN' && ' · Return in progress'}
         </p>
       </div>
 

@@ -2,7 +2,7 @@ import { Prisma } from '@shoe/db'
 import { prisma } from '../../lib/prisma.js'
 import { badRequest } from '../../lib/errors.js'
 import { logger } from '../../lib/logger.js'
-import { sendOrderConfirmation } from '../mail/mail.service.js'
+import { sendOrderConfirmation, sendRefundCompleted } from '../mail/mail.service.js'
 import { canTransition } from '../orders/order-status.js'
 import { allGoodsRefunded, refundCeiling, type CountedRefund } from '../refunds/refund.math.js'
 import type {
@@ -516,7 +516,41 @@ async function handleRefundEvent(
     throw badRequest('That amount does not match the refund that was issued')
   }
 
-  return settleRefund(refund.id, event)
+  const outcome = await settleRefund(refund.id, event)
+
+  /**
+   * Queued after the transaction has committed, like the order confirmation
+   * above and for the same reason: the worker reads the refund back, and a row
+   * a later failure rolled back must not produce an email saying money is on
+   * its way.
+   */
+  if (outcome.handled && outcome.action === 'REFUNDED' && outcome.refundId) {
+    await queueRefundCompleted(outcome.refundId)
+  }
+
+  return outcome
+}
+
+/**
+ * "We have refunded ₹X" — the one message that speaks in the past tense,
+ * because by here the provider has actually settled it.
+ *
+ * Swallowed on failure, like every other queue call on a webhook path: the
+ * refund is recorded and correct, and answering 500 would make the provider
+ * retry an event that was fully handled.
+ */
+async function queueRefundCompleted(refundId: string): Promise<void> {
+  try {
+    const refund = await prisma.refund.findUnique({
+      where: { id: refundId },
+      select: { order: { select: { user: { select: { email: true } } } } },
+    })
+    const email = refund?.order.user?.email
+    if (!email) return
+    await sendRefundCompleted({ to: email, refundId })
+  } catch (error) {
+    logger.error({ err: error, refundId }, 'could not queue the refund confirmation email')
+  }
 }
 
 /**
