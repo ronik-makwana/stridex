@@ -1,4 +1,5 @@
 import { createBrowserRouter } from 'react-router'
+import { RootLayout } from '@/layouts/RootLayout'
 import { ShopLayout } from '@/layouts/ShopLayout'
 import { AuthLayout } from '@/layouts/AuthLayout'
 import { CheckoutLayout } from '@/layouts/CheckoutLayout'
@@ -38,86 +39,96 @@ import ProfilePage from './account/profile'
  */
 export const router = createBrowserRouter([
   {
-    element: <ShopLayout />,
+    /**
+     * A single root wrapping all three route groups, so scroll behaviour is
+     * mounted once rather than repeated in ShopLayout, CheckoutLayout and
+     * AuthLayout — and so it also covers a jump between two of them.
+     */
+    element: <RootLayout />,
     children: [
-      { index: true, element: <HomePage /> },
-
-      { path: 'products/:slug', element: <ProductPage /> },
-      { path: 'categories/:slug', element: <CategoryPage /> },
-      // Before ':slug', or 'collections' with no slug never matches the index.
-      { path: 'collections', element: <CollectionsPage /> },
-      { path: 'collections/:slug', element: <CollectionPage /> },
-      { path: 'search', element: <SearchPage /> },
-
-      // Public, both of them: filling a cart and saving things needs no account.
-      // The auth wall sits on checkout, which arrives in Phase 15.
-      { path: 'cart', element: <CartPage /> },
-      { path: 'wishlist', element: <WishlistPage /> },
-
       {
-        element: <RequireAuth />,
+        element: <ShopLayout />,
         children: [
-          /**
-           * The account is one place with three screens, so it gets a layout
-           * and a sub-nav rather than three unrelated routes. `/account` lands
-           * on the profile — the first thing in the nav, and the screen that
-           * says whose account this is.
-           */
+          { index: true, element: <HomePage /> },
+
+          { path: 'products/:slug', element: <ProductPage /> },
+          { path: 'categories/:slug', element: <CategoryPage /> },
+          // Before ':slug', or 'collections' with no slug never matches the index.
+          { path: 'collections', element: <CollectionsPage /> },
+          { path: 'collections/:slug', element: <CollectionPage /> },
+          { path: 'search', element: <SearchPage /> },
+
+          // Public, both of them: filling a cart and saving things needs no account.
+          // The auth wall sits on checkout, which arrives in Phase 15.
+          { path: 'cart', element: <CartPage /> },
+          { path: 'wishlist', element: <WishlistPage /> },
+
           {
-            path: 'account',
-            element: <AccountLayout />,
+            element: <RequireAuth />,
             children: [
-              { index: true, element: <ProfilePage /> },
-              { path: 'orders', element: <OrdersPage /> },
-              { path: 'orders/:orderNumber', element: <OrderDetailPage /> },
-              { path: 'addresses', element: <AddressesPage /> },
-              { path: 'profile', element: <ProfilePage /> },
+              /**
+               * The account is one place with three screens, so it gets a layout
+               * and a sub-nav rather than three unrelated routes. `/account` lands
+               * on the profile — the first thing in the nav, and the screen that
+               * says whose account this is.
+               */
+              {
+                path: 'account',
+                element: <AccountLayout />,
+                children: [
+                  { index: true, element: <ProfilePage /> },
+                  { path: 'orders', element: <OrdersPage /> },
+                  { path: 'orders/:orderNumber', element: <OrderDetailPage /> },
+                  { path: 'addresses', element: <AddressesPage /> },
+                  { path: 'profile', element: <ProfilePage /> },
+                ],
+              },
+              // Phase 15: /checkout   Phase 16: /account/orders, /account/addresses
             ],
           },
-          // Phase 15: /checkout   Phase 16: /account/orders, /account/addresses
-        ],
-      },
 
-      // Last in this group: it matches anything the routes above did not.
-      { path: '*', element: <NotFoundPage /> },
-    ],
-  },
-  {
-    /**
-     * Checkout sits outside ShopLayout for the same reason the auth screens do:
-     * it has its own chrome, deliberately without the nav. Still behind
-     * RequireAuth, which sends a guest to /login?redirect=/checkout.
-     */
-    element: <CheckoutLayout />,
-    children: [
-      {
-        element: <RequireAuth />,
-        children: [{ path: 'checkout', element: <CheckoutPage /> }],
-      },
-    ],
-  },
-  {
-    // The auth screens get their own chrome-free layout, so they sit outside
-    // ShopLayout rather than inside it.
-    element: <AuthLayout />,
-    children: [
-      {
-        element: <RedirectIfAuthenticated />,
-        children: [
-          { path: 'login', element: <LoginPage /> },
-          { path: 'forgot-password', element: <ForgotPasswordPage /> },
-          { path: 'reset-password', element: <ResetPasswordPage /> },
+          // Last in this group: it matches anything the routes above did not.
+          { path: '*', element: <NotFoundPage /> },
         ],
       },
-      /*
-       * `/register` is deliberately NOT under RedirectIfAuthenticated. A
-       * successful signup creates a session, so that guard would fire on the
-       * app's own success and redirect away from the "check your inbox" screen
-       * the spec requires registration to end on. The page makes the
-       * already-signed-in check itself, against the state it had on mount.
-       */
-      { path: 'register', element: <RegisterPage /> },
-      { path: 'verify-email', element: <VerifyEmailPage /> },
+      {
+        /**
+         * Checkout sits outside ShopLayout for the same reason the auth screens do:
+         * it has its own chrome, deliberately without the nav. Still behind
+         * RequireAuth, which sends a guest to /login?redirect=/checkout.
+         */
+        element: <CheckoutLayout />,
+        children: [
+          {
+            element: <RequireAuth />,
+            children: [{ path: 'checkout', element: <CheckoutPage /> }],
+          },
+        ],
+      },
+      {
+        // The auth screens get their own chrome-free layout, so they sit outside
+        // ShopLayout rather than inside it.
+        element: <AuthLayout />,
+        children: [
+          {
+            element: <RedirectIfAuthenticated />,
+            children: [
+              { path: 'login', element: <LoginPage /> },
+              { path: 'forgot-password', element: <ForgotPasswordPage /> },
+              { path: 'reset-password', element: <ResetPasswordPage /> },
+            ],
+          },
+          /*
+           * `/register` is deliberately NOT under RedirectIfAuthenticated. A
+           * successful signup creates a session, so that guard would fire on the
+           * app's own success and redirect away from the "check your inbox" screen
+           * the spec requires registration to end on. The page makes the
+           * already-signed-in check itself, against the state it had on mount.
+           */
+          { path: 'register', element: <RegisterPage /> },
+          { path: 'verify-email', element: <VerifyEmailPage /> },
+        ],
+      },
     ],
   },
 ])

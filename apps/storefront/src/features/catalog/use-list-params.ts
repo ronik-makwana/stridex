@@ -86,9 +86,19 @@ export function useListParams() {
           if (!keepPage) next.delete('page')
           return next
         },
-        // `replace` on filter changes so Back leaves the grid entirely rather
-        // than stepping through every tick the customer made.
-        { replace: !keepPage },
+        {
+          // `replace` on filter changes so Back leaves the grid entirely rather
+          // than stepping through every tick the customer made.
+          replace: !keepPage,
+          /*
+           * A filter tick is not a new page. The root's <ScrollRestoration />
+           * sends every other navigation to the top, which is right for a click
+           * through to a product and wrong here — it would yank a customer away
+           * from the facet they are still working through. Pagination opts out
+           * of the opt-out below, on its own terms.
+           */
+          preventScrollReset: true,
+        },
       )
     },
     [setSearchParams],
@@ -108,6 +118,9 @@ export function useListParams() {
   const setPage = React.useCallback(
     (page: number) => {
       update({ page: page <= 1 ? null : String(page) }, { keepPage: true })
+      // A new page of results *is* a new page: back to the top, but smoothly —
+      // which is why `update` suppresses the router's instant jump rather than
+      // leaving both to fire.
       window.scrollTo({ top: 0, behavior: 'smooth' })
     },
     [update],
@@ -117,7 +130,10 @@ export function useListParams() {
     // `q` survives: clearing filters on a search results page should not throw
     // away what the customer searched for.
     const q = searchParams.get('q')
-    setSearchParams(q ? new URLSearchParams({ q }) : new URLSearchParams(), { replace: true })
+    setSearchParams(q ? new URLSearchParams({ q }) : new URLSearchParams(), {
+      replace: true,
+      preventScrollReset: true,
+    })
   }, [searchParams, setSearchParams])
 
   const activeCount =

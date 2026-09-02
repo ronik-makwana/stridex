@@ -189,7 +189,11 @@ export default function ProductPage() {
         Rendered at its real size against zero reviews, so Phase 17 fills it
         rather than reshaping the page around it.
       */}
-      <ReviewsPanel slug={product.slug} />
+      {/* Keyed by slug: the panel holds its page, sort and "write a review"
+          form in local state, and jumping from one product to the next through
+          "You may also like" reuses this instance — without the key, product B
+          opens on product A's review page 3. */}
+      <ReviewsPanel key={product.slug} slug={product.slug} />
     </div>
   )
 }
