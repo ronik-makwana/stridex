@@ -98,7 +98,7 @@ Seeded only when `NODE_ENV !== 'production'`.
 | Admin | `5175` | |
 | Postgres | `5433` | 5432 was taken locally — change it back in `docker-compose.yml` and the `DATABASE_URL`s if yours is free |
 | MinIO | `9000` / `9001` | object storage for product media |
-| Redis | `6379` | running, **not yet used** — see [Status](#status) |
+| Redis | `6379` | shared rate-limit counters; AOF-persisted. Required — the API will not boot without it |
 
 ---
 
@@ -249,8 +249,14 @@ npm run services:down
 | 🔭 **Monitoring** | A 500 in production would be invisible |
 | 🔍 **SEO** | Phase 19 — page titles, JSON-LD, sitemap, error boundaries |
 
-Redis is running and unused; it is the natural home for the rate-limit store,
-job locking, the email queue and a handful of caches.
+Redis now backs the rate-limit counters, so a limit means the same thing
+across every API process. `REDIS_URL` is **required** and validated at boot
+alongside `DATABASE_URL` — there is no fallback path, because the behaviour it
+would fall back to (a login limit that means something different on every
+instance) is wrong rather than merely slower. Redis going down at runtime is a
+separate matter and is handled: requests pass, loudly logged, never 500. Still
+to come, in `platform-implementation-order.md`: the job runtime, the email
+queue, and the read caches.
 
 <div align="center">
 <br />

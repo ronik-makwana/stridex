@@ -3,6 +3,7 @@ import { createApp } from './app.js'
 import { env } from './config/env.js'
 import { logger } from './lib/logger.js'
 import { prisma } from './lib/prisma.js'
+import { disconnectRedis } from './lib/redis.js'
 import { ensureBucket } from './config/minio.js'
 import { startJobs } from './lib/scheduler.js'
 import { jobs } from './jobs/index.js'
@@ -31,7 +32,7 @@ async function shutdown(signal: string) {
   stopJobs()
   logger.info({ signal }, 'shutting down')
   server.close(async () => {
-    await prisma.$disconnect()
+    await Promise.allSettled([prisma.$disconnect(), disconnectRedis()])
     process.exit(0)
   })
   // Do not let a hung connection hold the process open forever.

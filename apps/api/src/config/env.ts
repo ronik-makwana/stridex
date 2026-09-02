@@ -29,7 +29,14 @@ const envSchema = z.object({
   // <img> tags point at a CDN.
   S3_PUBLIC_URL: z.string().optional(),
 
-  REDIS_URL: z.string().optional(),
+  /**
+   * Required, like DATABASE_URL. Redis is infrastructure, not an enhancement:
+   * the rate limiters share their counters through it and the job runtime will
+   * not start without it. An API that boots with it missing is an API whose
+   * login limit silently means something different per process — better to
+   * fail at boot, where the message says so, than at 3am in a log nobody reads.
+   */
+  REDIS_URL: z.string().min(1),
 
   /**
    * Which provider `POST /payments` uses. 'mock' is a real implementation of

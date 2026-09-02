@@ -30,6 +30,27 @@ services:
     image: redis:7-alpine
     container_name: shoe-redis
     restart: unless-stopped
+    # Persistence is not the default, and the default is wrong here: a queued
+    # verification email that a restart silently drops is worse than no queue
+    # at all. AOF fsyncs once a second, so the worst case is a second of jobs.
+    command: redis-server --appendonly yes --appendfsync everysec
     ports: ["6379:6379"]
+    volumes: ["redisdata:/data"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
 
-volumes: { pgdata: {}, miniodata: {} }
+  mailpit:
+    image: axllent/mailpit
+    container_name: shoe-mailpit
+    restart: unless-stopped
+    ports: ["1025:1025", "8025:8025"]
+    environment:
+      MP_SMTP_AUTH_ACCEPT_ANY: 1
+      MP_SMTP_AUTH_ALLOW_INSECURE: 1
+      MP_DATABASE: /data/mailpit.db
+    volumes: ["mailpitdata:/data"]
+
+volumes: { pgdata: {}, miniodata: {}, redisdata: {}, mailpitdata: {} }
