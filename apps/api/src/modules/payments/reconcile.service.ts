@@ -2,7 +2,7 @@ import { prisma } from '../../lib/prisma.js'
 import { logger } from '../../lib/logger.js'
 import { getProvider } from './providers/index.js'
 import { handleProviderEvent } from './webhook.service.js'
-import type { ParsedWebhook } from './providers/provider.types.js'
+import type { ParsedPaymentWebhook } from './providers/provider.types.js'
 
 /**
  * What to do when the webhook never came.
@@ -30,11 +30,12 @@ const minutesAgo = (minutes: number) => new Date(Date.now() - minutes * 60_000)
 /** A synthetic event, so the outcome takes exactly the webhook's path. */
 function asEvent(
   payment: { id: string; providerPaymentId: string; checkoutSessionId: string | null },
-  status: ParsedWebhook['status'],
+  status: ParsedPaymentWebhook['status'],
   reason: string,
   amountInPaise = 0,
-): ParsedWebhook {
+): ParsedPaymentWebhook {
   return {
+    kind: 'payment',
     eventId: `reconcile:${payment.id}:${status}`,
     providerPaymentId: payment.providerPaymentId,
     status,

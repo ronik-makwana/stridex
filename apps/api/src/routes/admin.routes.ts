@@ -15,6 +15,7 @@ import {
 } from '../modules/dashboard/admin.dashboard.routes.js'
 import { adminOrdersRouter } from '../modules/orders/admin.orders.routes.js'
 import { adminPaymentsRouter } from '../modules/payments/admin.payments.routes.js'
+import { adminReturnsRouter } from '../modules/refunds/admin.refunds.routes.js'
 import { adminProductsRouter } from '../modules/products/admin.products.routes.js'
 import { adminReviewsRouter } from '../modules/reviews/admin.reviews.routes.js'
 import { adminTestimonialsRouter } from '../modules/testimonials/admin.testimonials.routes.js'
@@ -53,6 +54,10 @@ adminRouter.use('/uploads', adminUploadsRouter)
 // thing an operator changes here is where the parcel is.
 adminRouter.use('/orders', adminOrdersRouter)
 adminRouter.use('/payments', adminPaymentsRouter)
+
+// The returns queue: what customers asked to send back, and the one screen
+// where receiving a parcel moves stock and sends money in the same click.
+adminRouter.use('/returns', adminReturnsRouter)
 
 // Support: read-heavy, with two writes that can act on an account but never as
 // one — no password editing, no impersonation.

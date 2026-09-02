@@ -205,26 +205,6 @@ export function quoteRefund(
 }
 
 /**
- * Whether refunding this much leaves nothing owed — which is what decides
- * `payment_status` REFUNDED against PARTIALLY_REFUNDED.
- *
- * Compared against the ceiling rather than the total: an order already
- * partially refunded is settled when the *rest* goes back.
- *
- * Note what this is not. A customer who returns every item still leaves the
- * delivery charge with the store, so the money is not fully back and this says
- * so. "All the goods came home" is a different question, asked below and
- * answered into a different column (§11).
- */
-export function settlesPayment(
-  order: RefundableOrder,
-  refunds: CountedRefund[],
-  amount: Prisma.Decimal,
-): boolean {
-  return amount.greaterThanOrEqualTo(refundCeiling(order, refunds))
-}
-
-/**
  * Whether every unit on the order has been refunded — the fulfilment question,
  * and what moves `orders.status` to REFUNDED.
  *

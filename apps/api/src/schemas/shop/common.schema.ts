@@ -38,6 +38,21 @@ export const SHOP_ERROR_CODES = {
   CHECKOUT_ALREADY_COMPLETED: 'CHECKOUT_ALREADY_COMPLETED',
   QUANTITY_EXCEEDED: 'QUANTITY_EXCEEDED',
   COUPON_INVALID: 'COUPON_INVALID',
+  /**
+   * The order has moved past the point where the customer decides. Raised when
+   * a cancellation arrives after the parcel has shipped — including by a second
+   * or two, which is why the check that produces it is a conditional write
+   * rather than a read (15.4).
+   */
+  ORDER_NOT_CANCELLABLE: 'ORDER_NOT_CANCELLABLE',
+  /** Something is already open on this order. The client shows it rather than a form. */
+  REFUND_ALREADY_REQUESTED: 'REFUND_ALREADY_REQUESTED',
+  /**
+   * Past the return window, or the order never got far enough to have one. The
+   * deadline is recomputed from `delivered_at` on every read, so a client that
+   * cached "returnable" an hour ago is told here rather than trusted (15.5).
+   */
+  RETURN_WINDOW_CLOSED: 'RETURN_WINDOW_CLOSED',
 } as const
 
 export type ShopErrorCode = (typeof SHOP_ERROR_CODES)[keyof typeof SHOP_ERROR_CODES]

@@ -1,5 +1,6 @@
 import { sweepExpiredSessions, sweepOrphanedHolds } from '../modules/checkout/expiry.service.js'
 import { reconcilePendingPayments } from '../modules/payments/reconcile.service.js'
+import { reconcileStuckRefunds } from '../modules/refunds/refund.reconcile.service.js'
 import { sweepUnsentConfirmations } from '../modules/mail/mail.sweep.js'
 
 /**
@@ -57,6 +58,16 @@ export const jobs: Job[] = [
     /** Five minutes, as specified. It only looks at payments already 10 minutes old. */
     everyMs: 5 * 60_000,
     run: () => reconcilePendingPayments(),
+  },
+  {
+    name: 'refunds.reconcile',
+    /**
+     * Five minutes, like its counterpart, and for a more pressing reason: a
+     * stuck payment is stock nobody can sell, but a stuck refund is a customer
+     * who has posted their shoes back and is waiting to be paid.
+     */
+    everyMs: 5 * 60_000,
+    run: () => reconcileStuckRefunds(),
   },
 ]
 

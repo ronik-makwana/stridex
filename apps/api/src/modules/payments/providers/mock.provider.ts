@@ -4,9 +4,12 @@ import { badRequest } from '../../../lib/errors.js'
 import type {
   CreatePaymentArgs,
   CreatedPayment,
+  CreatedRefund,
   ParsedWebhook,
   PaymentProvider,
   ProviderPaymentState,
+  ProviderRefundState,
+  RefundArgs,
 } from './provider.types.js'
 
 /**
@@ -31,6 +34,7 @@ import type {
 export type MockOutcome = 'success' | 'fail'
 
 const PREFIX = 'mock_pay'
+const REFUND_PREFIX = 'mock_rfnd'
 
 const secret = () => env.PAYMENT_MOCK_SECRET
 
@@ -94,6 +98,53 @@ export const mockProvider: PaymentProvider = {
     }
   },
 
+  /**
+   * Accepts the instruction and settles nothing, which is exactly what a real
+   * provider does: a refund is asynchronous everywhere that matters, and a mock
+   * that returned SUCCEEDED here would let the whole codebase be written
+   * against a case that never happens in production.
+   *
+   * The id is derived from the idempotency key rather than random, so calling
+   * this twice with the same key returns the same refund — the behaviour a real
+   * provider promises, and the one the retry path depends on. A mock that
+   * minted a fresh id per call would make double-refunding untestable.
+   */
+  async refundPayment(args: RefundArgs): Promise<CreatedRefund> {
+    const providerRefundId = `${REFUND_PREFIX}_${createHmac('sha256', secret())
+      .update(args.idempotencyKey)
+      .digest('hex')
+      .slice(0, 32)}`
+
+    return {
+      providerRefundId,
+      status: 'PROCESSING',
+      raw: {
+        provider: 'mock',
+        providerRefundId,
+        providerPaymentId: args.providerPaymentId,
+        amountInPaise: args.amountInPaise,
+        note: args.note ?? null,
+        /** How the caller settles it — the same handoff `createPayment` makes. */
+        completeVia: 'POST /api/webhooks/payments/mock',
+      },
+    }
+  },
+
+  /**
+   * PROCESSING, always. The mock keeps no ledger, and "still in flight" is the
+   * honest answer for a refund whose webhook has not arrived — reconciliation
+   * against a real provider is what reads a real answer here.
+   */
+  async getRefund(providerRefundId: string): Promise<ProviderRefundState | null> {
+    if (!providerRefundId.startsWith(REFUND_PREFIX)) return null
+    return {
+      providerRefundId,
+      status: 'PROCESSING',
+      amountInPaise: 0,
+      raw: { note: 'The mock keeps no state; settle it with the webhook you send.' },
+    }
+  },
+
   verifySignature(rawBody: Buffer | string, signature: string | undefined): boolean {
     if (!signature) return false
     const body = typeof rawBody === 'string' ? rawBody : rawBody.toString('utf8')
@@ -111,6 +162,30 @@ export const mockProvider: PaymentProvider = {
     }
 
     const status = String(parsed.status ?? '').toUpperCase()
+
+    /**
+     * A refund event, told apart by the id it carries rather than by a `kind`
+     * the sender has to remember. Body shape:
+     *
+     *   { providerRefundId, status: 'SUCCEEDED' | 'FAILED', amountInPaise, ... }
+     */
+    if (parsed.providerRefundId) {
+      if (status !== 'SUCCEEDED' && status !== 'FAILED') {
+        throw badRequest(`Unknown refund status "${parsed.status}"`)
+      }
+      const providerRefundId = String(parsed.providerRefundId)
+      return {
+        kind: 'refund',
+        eventId: String(parsed.eventId ?? `${providerRefundId}:${status}`),
+        providerRefundId,
+        providerPaymentId: parsed.providerPaymentId ? String(parsed.providerPaymentId) : null,
+        status,
+        amountInPaise: Number(parsed.amountInPaise ?? 0),
+        failureReason: parsed.failureReason ? String(parsed.failureReason) : null,
+        raw: parsed,
+      }
+    }
+
     if (status !== 'AUTHORIZED' && status !== 'CAPTURED' && status !== 'FAILED') {
       throw badRequest(`Unknown payment status "${parsed.status}"`)
     }
@@ -119,6 +194,7 @@ export const mockProvider: PaymentProvider = {
     if (!providerPaymentId) throw badRequest('That webhook names no payment')
 
     return {
+      kind: 'payment',
       // Defaulted rather than required: a provider that retries without an
       // event id still has to be survivable, and the payment id plus status is
       // enough to make the write idempotent on our side.

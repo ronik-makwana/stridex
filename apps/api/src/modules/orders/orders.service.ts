@@ -42,7 +42,25 @@ const orderInclude = {
     include: { coupon: { select: { code: true, kind: true } } },
     orderBy: { createdAt: 'asc' },
   },
+  /**
+   * Money going back, and the request that asked for it. Both are read on the
+   * order page — "we are sending ₹4,299 back" is the first thing somebody who
+   * has just cancelled wants to see, and finding it anywhere else would mean a
+   * second request from a page that already has the order.
+   */
+  refunds: { include: { items: true }, orderBy: { createdAt: 'asc' } },
+  refundRequests: { include: { items: true }, orderBy: { createdAt: 'desc' } },
 } satisfies Prisma.OrderInclude
+
+/**
+ * How long after delivery a return may be raised. One row, read once per
+ * request and handed to the serializer — which must not query, or the orders
+ * list would read it once per card.
+ */
+async function returnWindowDays(): Promise<number> {
+  const settings = await prisma.storeSettings.findUnique({ where: { id: 'store' } })
+  return settings?.returnWindowDays ?? 7
+}
 
 export async function findMany(
   userId: string,
@@ -63,7 +81,8 @@ export async function findMany(
     prisma.order.count({ where }),
   ])
 
-  return { data: rows.map(serializeShopOrderCard), total }
+  const windowDays = await returnWindowDays()
+  return { data: rows.map((row) => serializeShopOrderCard(row, windowDays)), total }
 }
 
 export async function findByNumber(userId: string, orderNumber: string): Promise<ShopOrderPayload> {
@@ -72,5 +91,5 @@ export async function findByNumber(userId: string, orderNumber: string): Promise
     include: orderInclude,
   })
   if (!order) throw notFound('Order')
-  return serializeShopOrder(order)
+  return serializeShopOrder(order, await returnWindowDays())
 }

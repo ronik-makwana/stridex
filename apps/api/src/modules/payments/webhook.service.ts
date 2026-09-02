@@ -3,7 +3,13 @@ import { prisma } from '../../lib/prisma.js'
 import { badRequest } from '../../lib/errors.js'
 import { logger } from '../../lib/logger.js'
 import { sendOrderConfirmation } from '../mail/mail.service.js'
-import type { ParsedWebhook } from './providers/provider.types.js'
+import { canTransition } from '../orders/order-status.js'
+import { allGoodsRefunded, refundCeiling, type CountedRefund } from '../refunds/refund.math.js'
+import type {
+  ParsedPaymentWebhook,
+  ParsedRefundWebhook,
+  ParsedWebhook,
+} from './providers/provider.types.js'
 
 /**
  * What the provider says, becoming what is true.
@@ -22,7 +28,13 @@ import type { ParsedWebhook } from './providers/provider.types.js'
  */
 
 export type WebhookOutcome =
-  | { handled: true; action: 'CAPTURED' | 'FAILED'; orderId?: string; orderNumber?: string }
+  | {
+      handled: true
+      action: 'CAPTURED' | 'FAILED' | 'REFUNDED' | 'REFUND_FAILED'
+      orderId?: string
+      orderNumber?: string
+      refundId?: string
+    }
   | { handled: false; reason: string }
 
 /** `ORD-1000`, from a sequence — see prisma/sql/004. */
@@ -33,9 +45,24 @@ async function nextOrderNumber(tx: Prisma.TransactionClient): Promise<string> {
 
 const toPaise = (amount: Prisma.Decimal): number => amount.times(100).toNumber()
 
+/**
+ * The one door every provider event comes through, whichever direction the
+ * money was going. Two tables, two sets of rules, one signature check and one
+ * caller — the controller does not know there is a difference, and neither
+ * does reconciliation.
+ */
 export async function handleProviderEvent(
   providerName: string,
   event: ParsedWebhook,
+): Promise<WebhookOutcome> {
+  return event.kind === 'refund'
+    ? handleRefundEvent(providerName, event)
+    : handlePaymentEvent(providerName, event)
+}
+
+async function handlePaymentEvent(
+  providerName: string,
+  event: ParsedPaymentWebhook,
 ): Promise<WebhookOutcome> {
   const payment = await prisma.payment.findUnique({
     where: {
@@ -125,7 +152,7 @@ export async function handleProviderEvent(
 
 // ─── success ─────────────────────────────────────────────────────────────────
 
-async function capturePayment(paymentId: string, event: ParsedWebhook): Promise<WebhookOutcome> {
+async function capturePayment(paymentId: string, event: ParsedPaymentWebhook): Promise<WebhookOutcome> {
   return prisma.$transaction(async (tx) => {
     const payment = await tx.payment.findUniqueOrThrow({
       where: { id: paymentId },
@@ -333,7 +360,7 @@ async function capturePayment(paymentId: string, event: ParsedWebhook): Promise<
  * reopened, so the customer starts from a cart that still has everything in it
  * and gets a fresh quote at today's prices.
  */
-async function failPayment(paymentId: string, event: ParsedWebhook): Promise<WebhookOutcome> {
+async function failPayment(paymentId: string, event: ParsedPaymentWebhook): Promise<WebhookOutcome> {
   return prisma.$transaction(async (tx) => {
     const payment = await tx.payment.findUniqueOrThrow({
       where: { id: paymentId },
@@ -435,4 +462,221 @@ async function queueOrderConfirmation(orderId: string): Promise<void> {
      */
     logger.error({ err: error, orderId }, 'could not queue order confirmation — sweep will retry')
   }
+}
+
+// ─── refunds ─────────────────────────────────────────────────────────────────
+
+/**
+ * Money going back, becoming money that has gone back.
+ *
+ * The mirror of `capturePayment`, and it earns the symmetry: our own service
+ * asked for this refund, but asking is not settling. Until the provider says so
+ * the row is PROCESSING, the customer has not been paid, and nothing here has
+ * moved a status (§8, §12).
+ *
+ * What it deliberately does **not** touch is stock. Those units went back on
+ * the shelf when the parcel was received, or when the order was cancelled —
+ * both physical facts, both already recorded. Restocking here would mean a
+ * provider retrying an event puts the same pair back twice.
+ */
+async function handleRefundEvent(
+  providerName: string,
+  event: ParsedRefundWebhook,
+): Promise<WebhookOutcome> {
+  const refund = await prisma.refund.findUnique({
+    where: {
+      provider_providerRefundId: {
+        provider: providerName,
+        providerRefundId: event.providerRefundId,
+      },
+    },
+  })
+
+  // A refund we never issued. 200 and a log, like an unknown payment: no retry
+  // will make it ours.
+  if (!refund) return { handled: false, reason: 'No refund matches that provider id' }
+
+  // Delivered twice, which is the ordinary case rather than the exotic one.
+  if (refund.status === 'SUCCEEDED') {
+    return { handled: true, action: 'REFUNDED', orderId: refund.orderId, refundId: refund.id }
+  }
+
+  if (event.status === 'FAILED') return failRefund(refund.id, event)
+
+  /**
+   * A different figure than the one issued is not a settlement of this refund.
+   * The same refusal `handlePaymentEvent` makes, for the same reason (§5) —
+   * except here it is the customer who is short, which is worse.
+   */
+  if (event.amountInPaise && event.amountInPaise !== toPaise(refund.amount)) {
+    logger.error(
+      { refundId: refund.id, issued: toPaise(refund.amount), reported: event.amountInPaise },
+      'Refund webhook amount does not match the refund that was issued',
+    )
+    throw badRequest('That amount does not match the refund that was issued')
+  }
+
+  return settleRefund(refund.id, event)
+}
+
+/**
+ * The refund settled. One transaction: the refund row, the ledger entry, and
+ * every status that now reads differently because of it.
+ *
+ * Both statuses are recomputed **from the database** rather than from this
+ * event. A refund that arrives out of order, or one of two settling in the same
+ * second, must leave the order saying what the rows actually add up to — not
+ * what the most recent event happened to know.
+ */
+async function settleRefund(
+  refundId: string,
+  event: ParsedRefundWebhook,
+): Promise<WebhookOutcome> {
+  return prisma.$transaction(async (tx) => {
+    const refund = await tx.refund.findUniqueOrThrow({ where: { id: refundId } })
+
+    // Re-read inside the transaction: two deliveries racing each other both
+    // passed the check outside it, and only this one is serialised.
+    if (refund.status === 'SUCCEEDED') {
+      return { handled: true, action: 'REFUNDED', orderId: refund.orderId, refundId: refund.id }
+    }
+
+    await tx.refund.update({
+      where: { id: refundId },
+      data: { status: 'SUCCEEDED', providerResponse: event.raw as Prisma.InputJsonValue },
+    })
+
+    // The same ledger the capture wrote to, with the sign the other way round.
+    // `payment_transactions` is where "what happened to this money" is answered,
+    // and a refund that is not in it is a refund the payment screen cannot see.
+    await tx.paymentTransaction.create({
+      data: {
+        paymentId: refund.paymentId,
+        type: 'REFUND',
+        amount: refund.amount,
+        providerTransactionId: event.providerRefundId,
+        metadata: event.raw as Prisma.InputJsonValue,
+      },
+    })
+
+    const order = await tx.order.findUniqueOrThrow({
+      where: { id: refund.orderId },
+      include: { items: true, refunds: { include: { items: true } } },
+    })
+
+    const counted: CountedRefund[] = order.refunds.map((row) => ({
+      status: row.status,
+      amount: row.amount,
+      items: row.items,
+    }))
+
+    /**
+     * Two questions, two columns (§11).
+     *
+     * `payment_status` asks whether every rupee is back — and a customer who
+     * returned every item still leaves the delivery charge with the store, so
+     * that is PARTIALLY_REFUNDED and honestly so.
+     *
+     * `status` asks whether the goods came home, which is a fulfilment fact and
+     * has nothing to do with what shipping cost.
+     */
+    const outstanding = refundCeiling(order, counted)
+    const paymentStatus = outstanding.lessThanOrEqualTo(0) ? 'REFUNDED' : 'PARTIALLY_REFUNDED'
+    const goodsHome = allGoodsRefunded(order.items, counted)
+
+    /**
+     * A cancelled order stays CANCELLED. It is already terminal, already the
+     * truth the customer was told, and `order-status.ts` forbids the move —
+     * which is checked rather than assumed, because the state machine is the
+     * authority on this and not this file.
+     */
+    const movesToRefunded = goodsHome && canTransition(order.status, 'REFUNDED')
+
+    await tx.order.update({
+      where: { id: order.id },
+      data: { paymentStatus, ...(movesToRefunded ? { status: 'REFUNDED' } : {}) },
+    })
+
+    if (movesToRefunded) {
+      await tx.orderStatusHistory.create({
+        data: {
+          orderId: order.id,
+          fromStatus: order.status,
+          toStatus: 'REFUNDED',
+          changedByUserId: refund.initiatedByUserId,
+          note: 'Every item on this order has been refunded',
+        },
+      })
+    }
+
+    /**
+     * The payment record follows the money too, and `PaymentRecordStatus` has
+     * no partial: it is REFUNDED only once nothing of it is left. Summed from
+     * settled refunds against *that* payment rather than the order, because an
+     * order can in principle have been paid by more than one.
+     */
+    const settledOnPayment = await tx.refund.aggregate({
+      where: { paymentId: refund.paymentId, status: 'SUCCEEDED' },
+      _sum: { amount: true },
+    })
+    const payment = await tx.payment.findUniqueOrThrow({ where: { id: refund.paymentId } })
+    if ((settledOnPayment._sum.amount ?? new Prisma.Decimal(0)).greaterThanOrEqualTo(payment.amount)) {
+      await tx.payment.update({ where: { id: payment.id }, data: { status: 'REFUNDED' } })
+    }
+
+    /**
+     * The request is done when nothing it asked for is still in flight. A
+     * partial approval that was refunded in two goes closes on the second, and
+     * a request whose refund failed stays open for somebody to retry.
+     */
+    if (refund.requestId) {
+      const inFlight = await tx.refund.count({
+        where: { requestId: refund.requestId, status: { in: ['PENDING', 'PROCESSING'] } },
+      })
+      if (inFlight === 0) {
+        await tx.refundRequest.updateMany({
+          where: { id: refund.requestId, status: { in: ['APPROVED', 'RECEIVED'] } },
+          data: { status: 'COMPLETED' },
+        })
+      }
+    }
+
+    return {
+      handled: true,
+      action: 'REFUNDED',
+      orderId: order.id,
+      orderNumber: order.orderNumber,
+      refundId: refund.id,
+    }
+  })
+}
+
+/**
+ * The provider declined to send the money.
+ *
+ * Nothing is reversed. The parcel is still back on the shelf and the request is
+ * still received — both of those happened in the warehouse and are not undone
+ * by a bank saying no. What is needed is a person: the row keeps the reason,
+ * the request stays open, and this is logged at error because a customer is
+ * owed money that has not arrived.
+ */
+async function failRefund(
+  refundId: string,
+  event: ParsedRefundWebhook,
+): Promise<WebhookOutcome> {
+  const refund = await prisma.refund.update({
+    where: { id: refundId },
+    data: {
+      status: 'FAILED',
+      failureReason: event.failureReason ?? 'The provider declined the refund',
+      providerResponse: event.raw as Prisma.InputJsonValue,
+    },
+  })
+
+  logger.error(
+    { refundId, orderId: refund.orderId, reason: event.failureReason },
+    'A refund failed at the provider — the customer has not been paid',
+  )
+
+  return { handled: true, action: 'REFUND_FAILED', orderId: refund.orderId, refundId }
 }

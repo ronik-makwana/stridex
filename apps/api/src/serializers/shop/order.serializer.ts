@@ -1,6 +1,13 @@
 import type { Prisma } from '@shoe/db'
 import { money } from './money.js'
 import { labelFor } from '../../modules/checkout/shipping.methods.js'
+import {
+  isWithinReturnWindow,
+  refundedSoFar,
+  returnableUnits,
+  returnWindowEndsAt,
+  type CountedRefund,
+} from '../../modules/refunds/refund.math.js'
 
 /**
  * An order, as the customer who placed it sees it.
@@ -21,6 +28,8 @@ export type ShopOrderRecord = Prisma.OrderGetPayload<{
     statusHistory: true
     payments: true
     couponRedemptions: { include: { coupon: { select: { code: true; kind: true } } } }
+    refunds: { include: { items: true } }
+    refundRequests: { include: { items: true } }
   }
 }>
 
@@ -53,10 +62,54 @@ function serializeDiscounts(order: ShopOrderRecord) {
   }))
 }
 
-/** What the timeline draws. Internal notes and the staff member stay in admin. */
-const CUSTOMER_FACING_STATUSES = ['PENDING', 'PROCESSING', 'SHIPPED', 'DELIVERED'] as const
+/**
+ * What the timeline draws. Internal notes and the staff member stay in admin.
+ *
+ * CANCELLED and REFUNDED are on the list: they are the two entries a customer
+ * most wants dated, and leaving them off meant an order could go quiet with the
+ * page still showing "delivered" as the last thing that happened.
+ */
+const CUSTOMER_FACING_STATUSES = [
+  'PENDING',
+  'PROCESSING',
+  'SHIPPED',
+  'DELIVERED',
+  'CANCELLED',
+  'REFUNDED',
+] as const
 
-function serializeItem(item: ShopOrderRecord['items'][number]) {
+/** Somebody still owes somebody an answer or a parcel. */
+const OPEN_REQUEST_STATUSES = ['REQUESTED', 'APPROVED', 'RECEIVED'] as const
+
+const CANCELLABLE_STATUSES = ['PENDING', 'PROCESSING'] as const
+
+/**
+ * A refund, as the person waiting for it sees it.
+ *
+ * The provider's id, the internal note and who issued it stay in admin. What is
+ * left is the only thing the customer asked: how much, and has it left yet.
+ */
+function serializeRefunds(order: ShopOrderRecord) {
+  return order.refunds
+    // A refund that failed at the provider is not the customer's business to
+    // read as a line item — it is staff work, and showing "failed" beside an
+    // amount they are still owed reads as "you are not getting this".
+    .filter((refund) => refund.status !== 'FAILED')
+    .map((refund) => ({
+      id: refund.id,
+      amount: money(refund.amount),
+      /** PENDING and PROCESSING both mean "on its way"; the UI phrases it. */
+      status: refund.status,
+      reason: refund.reason,
+      requestedAt: refund.createdAt,
+      settledAt: refund.status === 'SUCCEEDED' ? refund.updatedAt : null,
+    }))
+}
+
+function serializeItem(
+  item: ShopOrderRecord['items'][number],
+  unitsRefunded: Map<string, number>,
+) {
   const cover = item.variant?.product?.media?.[0]
   return {
     id: item.id,
@@ -78,13 +131,36 @@ function serializeItem(item: ShopOrderRecord['items'][number]) {
     discountedTotal: money(item.totalPrice.minus(item.discountAmount)),
     /** Snapshot of the code that discounted this line, if any. */
     discountCode: item.discountCode,
+    /**
+     * How many of these may still be sent back — quantity less whatever has
+     * already been refunded, in-flight refunds included. The return form reads
+     * this rather than `quantity`, or a customer could ask for the same pair
+     * twice while the first refund is still settling.
+     */
+    returnableQuantity: returnableUnits(item, unitsRefunded),
   }
 }
 
-export function serializeShopOrder(order: ShopOrderRecord) {
+/**
+ * `returnWindowDays` is passed in rather than read here: a serializer that
+ * queried the database would do it once per row on the orders list. The caller
+ * reads the single settings row once and hands it down.
+ */
+export function serializeShopOrder(order: ShopOrderRecord, returnWindowDays = 7) {
   const shipping = order.addresses.find((address) => address.type === 'SHIPPING')
   // The one that settled, if any — a failed attempt is not what to show.
   const paid = order.payments.find((payment) => payment.status === 'CAPTURED')
+
+  const counted: CountedRefund[] = order.refunds.map((refund) => ({
+    status: refund.status,
+    amount: refund.amount,
+    items: refund.items,
+  }))
+  const openRequest = order.refundRequests.find((request) =>
+    (OPEN_REQUEST_STATUSES as readonly string[]).includes(request.status),
+  )
+  const { unitsByLine } = refundedSoFar(counted)
+  const windowEndsAt = returnWindowEndsAt(order.deliveredAt, returnWindowDays)
 
   return {
     id: order.id,
@@ -92,7 +168,7 @@ export function serializeShopOrder(order: ShopOrderRecord) {
     status: order.status,
     paymentStatus: order.paymentStatus,
     placedAt: order.placedAt,
-    items: order.items.map(serializeItem),
+    items: order.items.map((item) => serializeItem(item, unitsByLine)),
     itemCount: order.items.reduce((sum, item) => sum + item.quantity, 0),
     subtotal: money(order.subtotal),
     discountAmount: money(order.discountAmount),
@@ -126,6 +202,45 @@ export function serializeShopOrder(order: ShopOrderRecord) {
      * Customer-facing entries only, oldest first. A cancellation or a refund
      * appears as the status it is; a staff note does not appear at all.
      */
+    /**
+     * Whether the button is drawn — decided here, not in the browser.
+     *
+     * The client cannot work this out from `status` alone without knowing the
+     * rules, and a client that knows the rules is a second copy of them (§21).
+     * It is still only a hint: the endpoint re-checks with a conditional write,
+     * because the parcel can ship in the seconds after this was rendered.
+     */
+    cancellable:
+      (CANCELLABLE_STATUSES as readonly string[]).includes(order.status) && !openRequest,
+    /**
+     * Three conditions, all of which the server owns: it arrived, the window is
+     * still open, and there are units nobody has already sent back. The client
+     * draws a button from this and never computes it — the deadline is
+     * recomputed from `delivered_at` on every read, so today's rule applies to
+     * orders placed under yesterday's.
+     */
+    returnable:
+      order.status === 'DELIVERED' &&
+      isWithinReturnWindow(order.deliveredAt, returnWindowDays) &&
+      !openRequest &&
+      order.items.some((item) => returnableUnits(item, unitsByLine) > 0),
+    /** Null until something is delivered — which is not the same as "closed". */
+    returnWindowEndsAt: windowEndsAt,
+    deliveredAt: order.deliveredAt,
+    /** What is open, so the page can say "we have your request" instead of a form. */
+    activeRequest: openRequest
+      ? {
+          id: openRequest.id,
+          type: openRequest.type,
+          status: openRequest.status,
+          reason: openRequest.reason,
+          amount: money(openRequest.estimatedAmount),
+          requestedAt: openRequest.createdAt,
+        }
+      : null,
+    refunds: serializeRefunds(order),
+    /** Settled and in-flight together: what the customer is getting back. */
+    refundedTotal: money(refundedSoFar(counted).amount),
     timeline: order.statusHistory
       .filter((entry) => (CUSTOMER_FACING_STATUSES as readonly string[]).includes(entry.toStatus))
       .map((entry) => ({ status: entry.toStatus, at: entry.createdAt }))
@@ -135,8 +250,8 @@ export function serializeShopOrder(order: ShopOrderRecord) {
 }
 
 /** The card in the history list: enough to recognise an order, not to audit it. */
-export function serializeShopOrderCard(order: ShopOrderRecord) {
-  const full = serializeShopOrder(order)
+export function serializeShopOrderCard(order: ShopOrderRecord, returnWindowDays = 7) {
+  const full = serializeShopOrder(order, returnWindowDays)
   return {
     id: full.id,
     orderNumber: full.orderNumber,
@@ -145,6 +260,9 @@ export function serializeShopOrderCard(order: ShopOrderRecord) {
     placedAt: full.placedAt,
     itemCount: full.itemCount,
     totalAmount: full.totalAmount,
+    refundedTotal: full.refundedTotal,
+    /** So the history list can badge "return open" without a second request. */
+    activeRequest: full.activeRequest,
     /** Three thumbnails at most — the row is a reminder, not an inventory. */
     thumbnails: full.items.slice(0, 3).map((item) => item.image),
     createdAt: full.createdAt,

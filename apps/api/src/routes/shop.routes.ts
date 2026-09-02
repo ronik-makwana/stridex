@@ -8,6 +8,7 @@ import { shopHomeRouter } from '../modules/home/shop.home.routes.js'
 import { shopCheckoutRouter } from '../modules/checkout/shop.checkout.routes.js'
 import { shopAccountRouter } from '../modules/account/shop.account.routes.js'
 import { shopOrdersRouter } from '../modules/orders/shop.orders.routes.js'
+import { shopRefundsRouter } from '../modules/refunds/shop.refunds.routes.js'
 import { shopPaymentsRouter } from '../modules/payments/shop.payments.routes.js'
 import { shopProductsRouter } from '../modules/products/shop.products.routes.js'
 import { shopWishlistRouter } from '../modules/wishlist/shop.wishlist.routes.js'
@@ -66,6 +67,10 @@ shopRouter.use('/checkout', shopCheckoutRouter)
 shopRouter.use('/payments', shopPaymentsRouter)
 // Your own orders, written by the webhook and read here.
 shopRouter.use('/orders', shopOrdersRouter)
+// Also at `/orders`: the writes a customer may make to one — cancelling it,
+// and asking to send part of it back. Money never moves on the strength of
+// this request alone; the provider confirms it, exactly as with a payment.
+shopRouter.use('/orders', shopRefundsRouter)
 
 // Editing yourself: the profile and the password. Reading yourself is /auth/me.
 shopRouter.use('/account', shopAccountRouter)

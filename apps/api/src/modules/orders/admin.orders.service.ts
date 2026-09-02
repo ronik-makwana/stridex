@@ -40,6 +40,14 @@ export const orderInclude = {
     include: { changedBy: { select: { id: true, firstName: true, lastName: true } } },
   },
   payments: true,
+  /**
+   * What has gone back, and what was asked for. Both on the order screen: an
+   * operator deciding whether to refund ₹200 needs to see the ₹1,199 that went
+   * out this morning, and a second screen to find it is a second screen nobody
+   * opens.
+   */
+  refunds: { include: { items: true, initiatedBy: { select: { id: true, firstName: true, lastName: true } } }, orderBy: { createdAt: 'desc' } },
+  refundRequests: { orderBy: { createdAt: 'desc' } },
 } satisfies Prisma.OrderInclude
 
 const SORT_COLUMNS = {
@@ -129,7 +137,7 @@ export async function updateStatus(
   assertTransition(order.status, input.status)
 
   const [, history] = await prisma.$transaction([
-    prisma.order.update({ where: { id }, data: { status: input.status } }),
+    prisma.order.update({ where: { id }, data: { status: input.status, ...deliveryStamp(order.status, input.status) } }),
     prisma.orderStatusHistory.create({
       data: {
         orderId: id,
@@ -144,6 +152,24 @@ export async function updateStatus(
   if (input.status === 'SHIPPED') await queueShippedEmail(id, history.id)
 
   return findById(id)
+}
+
+/**
+ * `delivered_at`, written by the transition that means it.
+ *
+ * Stamped on the way in and **cleared on the way back out**: SHIPPED is the one
+ * correction `order-status.ts` allows from DELIVERED, and a parcel marked
+ * arrived by mistake must not leave a return window running from a delivery
+ * that never happened. Re-delivering stamps it again, which is why this is a
+ * write on every transition rather than a set-once column.
+ *
+ * REFUNDED is deliberately not a clear: an order refunded after delivery was
+ * still delivered, and that date is what the return was judged against.
+ */
+function deliveryStamp(from: OrderStatus, to: OrderStatus) {
+  if (to === 'DELIVERED') return { deliveredAt: new Date() }
+  if (from === 'DELIVERED' && to === 'SHIPPED') return { deliveredAt: null }
+  return {}
 }
 
 /** The timeline on its own, for a screen that only wants the history. */

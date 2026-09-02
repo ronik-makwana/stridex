@@ -1,6 +1,7 @@
 import type { Prisma } from '@shoe/db'
 import { allowedTransitions } from '../../modules/orders/order-status.js'
 import { labelFor } from '../../modules/checkout/shipping.methods.js'
+import { refundCeiling, type CountedRefund } from '../../modules/refunds/refund.math.js'
 
 /**
  * The admin's view of an order. It differs from the customer's in what it is
@@ -15,6 +16,14 @@ import { labelFor } from '../../modules/checkout/shipping.methods.js'
 
 const money = (value: Prisma.Decimal): string => value.toFixed(2)
 
+/** In-flight refunds count against the ceiling, exactly as the engine counts them. */
+const countedRefunds = (order: AdminOrderRecord): CountedRefund[] =>
+  order.refunds.map((refund) => ({
+    status: refund.status,
+    amount: refund.amount,
+    items: refund.items,
+  }))
+
 export type AdminOrderRecord = Prisma.OrderGetPayload<{
   include: {
     user: { select: { id: true; email: true; firstName: true; lastName: true } }
@@ -23,6 +32,13 @@ export type AdminOrderRecord = Prisma.OrderGetPayload<{
     statusHistory: { include: { changedBy: { select: { id: true; firstName: true; lastName: true } } } }
     payments: true
     couponRedemptions: { include: { coupon: { select: { code: true; kind: true } } } }
+    refunds: {
+      include: {
+        items: true
+        initiatedBy: { select: { id: true; firstName: true; lastName: true } }
+      }
+    }
+    refundRequests: true
   }
 }>
 
@@ -166,6 +182,49 @@ export function serializeAdminOrder(order: AdminOrderRecord) {
         createdAt: entry.createdAt,
       })),
 
+    /**
+     * Every refund on the order, failed ones included — unlike the customer's
+     * view, which hides them. A refund the provider declined is precisely what
+     * an operator has to see and act on.
+     */
+    refunds: order.refunds.map((refund) => ({
+      id: refund.id,
+      amount: money(refund.amount),
+      status: refund.status,
+      reason: refund.reason,
+      note: refund.note,
+      provider: refund.provider,
+      providerRefundId: refund.providerRefundId,
+      failureReason: refund.failureReason,
+      requestId: refund.requestId,
+      initiatedBy: refund.initiatedBy
+        ? {
+            id: refund.initiatedBy.id,
+            name:
+              [refund.initiatedBy.firstName, refund.initiatedBy.lastName]
+                .filter(Boolean)
+                .join(' ') || null,
+          }
+        // Null means the system issued it: a customer's own cancellation.
+        : null,
+      createdAt: refund.createdAt,
+      updatedAt: refund.updatedAt,
+    })),
+    /** The requests behind them, so the screen can link out to the queue. */
+    refundRequests: order.refundRequests.map((request) => ({
+      id: request.id,
+      type: request.type,
+      status: request.status,
+      reason: request.reason,
+      estimatedAmount: money(request.estimatedAmount),
+      createdAt: request.createdAt,
+    })),
+    /**
+     * What may still go back, computed here rather than in the browser: the
+     * refund dialog caps its input on this, and the server re-checks it anyway
+     * because the number can move between the render and the click (§21).
+     */
+    refundableAmount: money(refundCeiling(order, countedRefunds(order))),
     /**
      * Served rather than hard-coded in the client: the machine lives in one
      * place, and a modal that offers a transition the service will refuse is a
