@@ -183,76 +183,72 @@ rather than vanishing.
 
 ## Phase 23 — Transactional email
 
-The five messages, with their hook points. Password reset is on the list because
-it is the same machinery and it is the one whose absence is currently a
-`TODO`.
+Five messages, with their hook points. Password reset is on the list because it
+is the same machinery and its absence was the live `TODO`.
 
 | Message | Enqueued at |
 |---|---|
-| Verification | `auth.service.ts:361` `issueEmailVerificationToken` — the single funnel for signup *and* resend |
-| Password reset | `auth.service.ts:229` `createPasswordResetToken` |
-| Welcome | `auth.service.ts:400` `verifyEmail`, **not** register — see below |
-| Order confirmation | `payments/webhook.service.ts:105` `capturePayment`, after the transaction |
-| Order shipped | `orders/admin.orders.service.ts:108` `updateStatus`, after the transaction, when `status === 'SHIPPED'` |
+| Verification | `auth.service.ts` `issueEmailVerificationToken` — the single funnel for signup *and* resend |
+| Password reset | `auth.service.ts` `createPasswordResetToken` |
+| Welcome | `auth.service.ts` `verifyEmail`, **not** register — and customers only |
+| Order confirmation | `payments/webhook.service.ts` `handleProviderEvent`, after `capturePayment` returns |
+| Order shipped | `orders/admin.orders.service.ts` `updateStatus`, after the transaction |
 
 **Welcome fires on verification, not signup.** Two emails in the same second
-means one of them is competing with the action the customer actually needs. On
-verification it also lands on an address known to be real. `verifyEmail`
-early-returns for an already-verified user, so the enqueue goes after the
-`$transaction` and outside that guard, or a double-clicked link sends two.
+means one competes with the link the customer actually needs, and sending it
+here means it lands on an address now known to be real.
 
-**Enqueue after commit. Never inside the transaction.** Both order emails hang
-off transaction boundaries. `capturePayment` is one large `prisma.$transaction`;
-a `queue.add()` inside it lets the worker read the order *before* the commit
-lands, or emails a confirmation for a transaction that then rolled back. Enqueue
-from the caller, off the returned `orderId`.
+**Enqueue after commit. Never inside the transaction.** Queuing inside would let
+the worker read an order before it exists, or send a confirmation for one a
+later failure rolled back. The confirmation hook sits in `handleProviderEvent`
+rather than inside `capturePayment` for exactly this reason — and that placement
+also means **reconciliation covers it**, since it calls the same function.
 
-**The gap that leaves, and the cheap fix.** A process that dies between COMMIT
-and `queue.add()` loses the mail. The textbook answer is a transactional outbox;
-the answer proportionate to the failure — a missing confirmation email, not a
-lost payment — is a nullable `confirmationSentAt` on `orders`, set by the
-worker, plus a sweep for PAID orders older than N minutes with nothing sent.
-One column and a job that follows the pattern `expiry.service.ts` already
-established, instead of a table and a poller.
+**Enqueue failures are logged, never thrown.** A queue that blinks must not turn
+a successful signup into a 500 or make a correctly-handled webhook answer 500
+and get retried. The cost is that a failure is invisible in the response, which
+is what the sweep below is for.
 
-**Payloads carry ids, never rendered content.** The worker re-reads. An order
-email renders the snapshot values on `order_items`; a payload with a price
-embedded in it is a second copy of a number that must have one.
+**`mail.confirmations`, a registered job.** `orders.confirmation_sent_at` records
+that a confirmation was queued; the sweep finds PAID orders past a five-minute
+grace with it still null and queues them. This is the cheap half of a
+transactional outbox — one column and one job instead of a table and a poller —
+and it is proportionate because the failure it guards is a missing email, not a
+lost payment. The money path already has webhook retries and reconciliation.
 
-**The auth tokens are the exception, and it has a cost.** Only the SHA-256 is
-stored, so the worker cannot re-derive the raw token — those jobs must carry it.
-A live credential therefore sits in Redis for the job's lifetime.
-`removeOnComplete: true` on that queue, and that Redis is not reachable off-host.
+**Deterministic `jobId`s, separated by `-` and not `:`.** BullMQ composes its
+Redis keys as `bull:<queue>:<jobId>` and **rejects any custom id containing a
+colon** — it throws at `queue.add`, which combined with the swallowed enqueue
+above means the first version of this shipped silently sending nothing.
 
-**Deduplicate on a deterministic `jobId`.** Each of these has a different
-natural key and getting one wrong is a duplicate email or a missing one:
+- `auth.verify-<tokenId>` / `auth.reset-<tokenId>` — keyed on the token row, not
+  the user: resend mints a fresh token, and each issued token is its own event.
+- `auth.welcome-<userId>` — an account is welcomed once in its life, however
+  many times its verification link is double-clicked.
+- `order.confirmation-<orderId>` — providers retry and reconciliation re-enters
+  on a schedule, both by design.
+- `order.shipped-<statusHistoryId>` — **not the order.** `order-status.ts`
+  permits SHIPPED → PROCESSING so an operator can correct a mistake and ship
+  again; keyed on the order, that second real shipment would send nothing.
 
-- `order-confirmation:<orderId>` — providers retry webhooks. The unique index
-  stops the duplicate order; this stops the duplicate email.
-- `order-shipped:<orderId>:<statusHistoryId>` — **not `orderId` alone.**
-  `order-status.ts:32` deliberately permits SHIPPED → PROCESSING, so an operator
-  can ship, walk it back, and ship again. Keyed on the order, the second
-  legitimate shipment sends nothing. Keyed on the history row, every transition
-  is its own event.
-- `verify-email:<tokenId>` — resend already invalidates the old token and mints
-  a new one, so the token row is exactly the right granularity.
+**The shipped email ships without tracking.** `orders` carries no carrier or
+tracking number and `updateStatus` takes only `{status, note}`. "It has left us"
+is still the thing the customer wants to know, and the link goes to the order
+page — which is where tracking will appear when the column exists. Adding it is
+a migration plus an admin form field, and is not in this phase.
 
-**Cleanups this phase closes.** `shop.auth.controller.ts:64` stops returning
-`verificationToken` in the 201 body and `logIssuedToken` at :61 goes.
-`admin.auth.controller.ts:77` loses its TODO. And `register`'s docstring at
-`auth.service.ts:300` parks the 409 existence-oracle question explicitly on
-*"needs a mailer this build does not have yet"* — once it does, that is
-reopenable. It is a separate decision; do not fold it into this phase.
+**Cleanups closed here.** `logIssuedToken` is gone from
+`shop.auth.controller.ts` and the `TODO(phase 9)` from
+`admin.auth.controller.ts`. No token is written to a log or returned in a
+response any more; `verificationEmailSent` stays, because the storefront reads
+it. The 409 existence-oracle question parked in `register`'s docstring on "needs
+a mailer this build does not have yet" is now reopenable, and deliberately not
+reopened here.
 
-**Blocked, decide before starting:** the shipped email has nothing to say.
-`Order` carries no carrier or tracking number and `updateStatus` takes only
-`{status, note}`. A shipping notification that cannot answer "where is it" is a
-notification customers reply to. That is a migration plus an admin form field —
-either scope it in here or ship the other four and leave shipped for later.
-
-**Done when:** a webhook delivered three times sends one confirmation; an order
-shipped, reverted and re-shipped sends two; and killing the worker mid-send
-loses nothing on restart.
+**Done when:** a real signup delivers a verification email whose link verifies
+the account and triggers exactly one welcome however many times it is clicked; a
+webhook-created order delivers a confirmation rendering snapshot values; and an
+order shipped, reverted and re-shipped delivers two.
 
 ---
 

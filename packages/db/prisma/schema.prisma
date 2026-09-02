@@ -750,6 +750,22 @@ model Order {
   totalAmount      Decimal       @map("total_amount") @db.Decimal(12, 2)
   currency         String        @default("INR")
   placedAt         DateTime?     @map("placed_at") @db.Timestamptz(6)
+  /**
+   * When the confirmation email was handed to the provider — not when it was
+   * queued, and not when it was read.
+   *
+   * The order is created inside a transaction and the email is queued *after*
+   * it commits, because queuing inside would let the worker read an order that
+   * does not exist yet, or send a confirmation for one that then rolled back.
+   * That leaves a gap: a process that dies between COMMIT and `queue.add` loses
+   * the email with nothing recording that it should have sent one.
+   *
+   * This column closes it. A sweep finds PAID orders past a grace period with
+   * this still null and queues them — the cheap half of a transactional outbox,
+   * without the table or the poller, because the failure being guarded against
+   * is a missing email rather than a lost payment.
+   */
+  confirmationSentAt DateTime?   @map("confirmation_sent_at") @db.Timestamptz(6)
   createdAt        DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt        DateTime      @updatedAt @map("updated_at") @db.Timestamptz(6)
 
@@ -765,6 +781,7 @@ model Order {
   @@index([status, createdAt])
   @@index([paymentStatus])
   @@index([userId, createdAt])
+  @@index([paymentStatus, confirmationSentAt])
   @@map("orders")
 }
 

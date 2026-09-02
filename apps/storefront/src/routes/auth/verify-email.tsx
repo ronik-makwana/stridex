@@ -22,7 +22,7 @@ export default function VerifyEmailPage() {
   const { reloadUser, isAuthenticated } = useAuth()
   const token = params.get('token') ?? ''
 
-  const { mutate, status, error } = useMutation({
+  const { mutate, status, error, data } = useMutation({
     mutationFn: () => authApi.verifyEmail({ token }),
     onSuccess: () => {
       // If this same browser is signed in, its cached user still says
@@ -76,6 +76,23 @@ export default function VerifyEmailPage() {
             ? { to: '/account/profile', label: 'Send a new link' }
             : { to: '/login', label: 'Sign in' }
         }
+      />
+    )
+  }
+
+  /**
+   * Two different successes. Someone who opens the link a second time — from
+   * the same email, or an older one after the account was already confirmed —
+   * has not just verified anything, and telling them they have is a small lie
+   * that makes people wonder whether the first click worked.
+   */
+  if (data?.alreadyVerified) {
+    return (
+      <Outcome
+        icon={<CheckCircle2 className="text-success size-8" />}
+        title="Email already verified"
+        body="Nothing more to do — this address was confirmed already."
+        action={{ to: '/', label: 'Start shopping' }}
       />
     )
   }

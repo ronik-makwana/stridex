@@ -2,6 +2,7 @@ import 'dotenv/config'
 import { logger } from '../lib/logger.js'
 import { prisma } from '../lib/prisma.js'
 import { disconnectRedis } from '../lib/redis.js'
+import { closeQueues } from '../lib/queue.js'
 import { jobs, jobsByName } from './index.js'
 
 /**
@@ -40,8 +41,8 @@ try {
   // A non-zero exit, unlike the worker: a person or a cron is watching this one
   // and needs to know it failed.
   logger.error({ err: error, job: job.name }, 'Job failed')
-  await Promise.allSettled([prisma.$disconnect(), disconnectRedis()])
+  await Promise.allSettled([closeQueues(), prisma.$disconnect(), disconnectRedis()])
   process.exit(1)
 }
 
-await Promise.allSettled([prisma.$disconnect(), disconnectRedis()])
+await Promise.allSettled([closeQueues(), prisma.$disconnect(), disconnectRedis()])

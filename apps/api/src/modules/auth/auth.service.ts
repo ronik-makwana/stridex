@@ -13,6 +13,7 @@ import {
   signRefreshToken,
   verifyRefreshToken,
 } from './auth.tokens.js'
+import { sendPasswordReset, sendVerifyEmail, sendWelcome } from '../mail/mail.service.js'
 
 // Must match packages/db/prisma/seed.ts, or every seeded login triggers a rehash.
 const ARGON2_OPTIONS = {
@@ -234,13 +235,26 @@ export async function createPasswordResetToken(
   if (!user || !allowedRoles.includes(user.role) || user.status === 'SUSPENDED') return null
 
   const token = randomToken(48)
-  await prisma.passwordResetToken.create({
+  const created = await prisma.passwordResetToken.create({
     data: {
       userId: user.id,
       tokenHash: sha256(token),
       expiresAt: new Date(Date.now() + RESET_TOKEN_MS),
     },
   })
+
+  // Queued, not sent inline. This endpoint answers 202 identically whether or
+  // not the account exists, and waiting on SMTP here would make the response
+  // time itself an account-existence oracle — the exact leak the shape of this
+  // function was written to close.
+  void sendPasswordReset({
+    to: user.email,
+    firstName: user.firstName,
+    token,
+    tokenId: created.id,
+    audience: user.role === 'CUSTOMER' ? 'shop' : 'admin',
+  }).catch((error) => logger.error({ err: error, userId: user.id }, 'could not queue reset email'))
+
   return token
 }
 
@@ -344,7 +358,7 @@ export async function register(
   // Signed in immediately: Phase 14 merges the guest cart on register as well
   // as on login, and it needs a session to merge into.
   const tokens = await startSession(user, context)
-  const verificationToken = await issueEmailVerificationToken(user.id)
+  const verificationToken = await issueEmailVerificationToken(user)
 
   return { user, tokens, verificationToken }
 }
@@ -357,22 +371,49 @@ const VERIFICATION_TOKEN_MS = 24 * 60 * 60 * 1000
  * Invalidates any outstanding token before minting a new one, so "resend"
  * cannot leave three live links in three inboxes. Returns the raw token; only
  * its SHA-256 is stored, exactly as password reset does.
+ *
+ * The invalidation is only real because `verifyEmail` checks `usedAt`. It did
+ * not for a long time, and this claim was false the whole while — a superseded
+ * link kept working.
  */
-async function issueEmailVerificationToken(userId: string): Promise<string> {
+async function issueEmailVerificationToken(user: {
+  id: string
+  email: string
+  firstName: string | null
+  role: UserRole
+}): Promise<string> {
   const token = randomToken(48)
-  await prisma.$transaction([
+  const [, created] = await prisma.$transaction([
     prisma.emailVerificationToken.updateMany({
-      where: { userId, usedAt: null },
+      where: { userId: user.id, usedAt: null },
       data: { usedAt: new Date() },
     }),
     prisma.emailVerificationToken.create({
       data: {
-        userId,
+        userId: user.id,
         tokenHash: sha256(token),
         expiresAt: new Date(Date.now() + VERIFICATION_TOKEN_MS),
       },
     }),
   ])
+
+  /**
+   * After the transaction, never inside it. A job queued inside could be picked
+   * up before the commit lands, and would survive a rollback that took the
+   * token row with it — an email whose link was never valid.
+   *
+   * Not awaited into the caller's failure path either: the account exists and
+   * the token is stored, so a queue that is briefly unreachable must not turn a
+   * successful signup into a 500. The customer can always ask for a resend.
+   */
+  void sendVerifyEmail({
+    to: user.email,
+    firstName: user.firstName,
+    token,
+    tokenId: created.id,
+    audience: user.role === 'CUSTOMER' ? 'shop' : 'admin',
+  }).catch((error) => logger.error({ err: error, userId: user.id }, 'could not queue verification email'))
+
   return token
 }
 
@@ -388,7 +429,7 @@ export async function requestEmailVerification(
   const user = await prisma.user.findUnique({ where: { email: email.toLowerCase() } })
   if (!user || !allowedRoles.includes(user.role)) return null
   if (user.status === 'SUSPENDED' || user.emailVerifiedAt) return null
-  return issueEmailVerificationToken(user.id)
+  return issueEmailVerificationToken(user)
 }
 
 /**
@@ -396,11 +437,15 @@ export async function requestEmailVerification(
  * a token already used inside its window still resolves, because the account is
  * verified either way and an error screen after a successful verification is
  * pure confusion. A token that never existed, or has expired, still fails.
+ *
+ * `alreadyVerified` reports which of those two happened. Both are successes, but
+ * "Email verified" is a lie on the second click and the page has no other way to
+ * know — the user object looks identical either way.
  */
 export async function verifyEmail(
   token: string,
   allowedRoles: readonly UserRole[],
-): Promise<User> {
+): Promise<{ user: User; alreadyVerified: boolean }> {
   const record = await prisma.emailVerificationToken.findUnique({
     where: { tokenHash: sha256(token) },
     include: { user: true },
@@ -412,7 +457,29 @@ export async function verifyEmail(
   if (record.expiresAt.getTime() <= Date.now()) {
     throw unauthorized('This verification link is invalid or has expired')
   }
-  if (record.user.emailVerifiedAt) return record.user
+
+  /**
+   * Already verified wins over everything below, and the order is the whole
+   * point: a customer who double-clicks the link, or opens it again from their
+   * inbox a day later, gets the same success they got the first time. An error
+   * screen after a verification that actually worked is pure confusion.
+   */
+  if (record.user.emailVerifiedAt) return { user: record.user, alreadyVerified: true }
+
+  /**
+   * Used, but the account is not verified — so this token was **superseded by a
+   * resend**, not consumed. `issueEmailVerificationToken` marks outstanding
+   * tokens used before minting a new one, precisely so that three resends do
+   * not leave three live links in three inboxes.
+   *
+   * Without this check that invalidation did nothing: the old link still
+   * verified, which is exactly the hole the reset flow closes with the same
+   * `usedAt` guard. Reaching here means the customer clicked an older email;
+   * the newest one in their inbox is the one that works.
+   */
+  if (record.usedAt) {
+    throw unauthorized('This verification link has been replaced by a newer one')
+  }
 
   const [user] = await prisma.$transaction([
     prisma.user.update({
@@ -425,5 +492,20 @@ export async function verifyEmail(
     }),
   ])
 
-  return user
+  /**
+   * Welcome goes out here rather than at signup, and only for customers.
+   *
+   * Two emails in the same second means one of them competes with the link the
+   * customer actually needs — and sending it here means it lands on an address
+   * now known to be real. It sits below the early return above, so a
+   * double-clicked link verifies once and welcomes once; the job id keyed on
+   * the user makes that belt and braces.
+   */
+  if (user.role === 'CUSTOMER') {
+    void sendWelcome({ to: user.email, firstName: user.firstName, userId: user.id }).catch((error) =>
+      logger.error({ err: error, userId: user.id }, 'could not queue welcome email'),
+    )
+  }
+
+  return { user, alreadyVerified: false }
 }

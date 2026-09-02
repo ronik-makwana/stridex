@@ -38,8 +38,18 @@ const maintenanceJobOptions: JobsOptions = {
   attempts: 1,
 }
 
+/**
+ * Held so shutdown can close them.
+ *
+ * BullMQ closes a connection it created itself, but **not** one handed to it —
+ * that one stays the caller's to own. Without these references a short-lived
+ * process that enqueues anything (`jobs/run.ts`, `mail:test`) never exits,
+ * because an idle ioredis socket keeps the event loop alive.
+ */
+const queueConnections = [createQueueConnection('maintenance-queue')]
+
 export const maintenanceQueue = new Queue(MAINTENANCE_QUEUE, {
-  connection: createQueueConnection('maintenance-queue'),
+  connection: queueConnections[0]!,
   defaultJobOptions: maintenanceJobOptions,
 })
 
@@ -92,8 +102,11 @@ const mailJobOptions: JobsOptions = {
   removeOnFail: { age: 3_600 },
 }
 
+const mailConnection = createQueueConnection('mail-queue')
+queueConnections.push(mailConnection)
+
 export const mailQueue = new Queue(MAIL_QUEUE, {
-  connection: createQueueConnection('mail-queue'),
+  connection: mailConnection,
   defaultJobOptions: mailJobOptions,
 })
 
@@ -137,7 +150,11 @@ export async function readWorkerHealth(): Promise<WorkerHealth> {
   }
 }
 
-/** Shutdown. Closing a queue closes the connection it was handed. */
+/**
+ * Shutdown. The queues first, then the connections they were given — in that
+ * order, so nothing is mid-command when its socket goes.
+ */
 export async function closeQueues(): Promise<void> {
   await Promise.allSettled([maintenanceQueue.close(), mailQueue.close()])
+  await Promise.allSettled(queueConnections.map((connection) => connection.quit()))
 }

@@ -1,8 +1,6 @@
 import type { Request, RequestHandler, Response } from 'express'
 import { prisma } from '../../lib/prisma.js'
 import { notFound, unauthorized } from '../../lib/errors.js'
-import { logger } from '../../lib/logger.js'
-import { isProduction } from '../../config/env.js'
 import { ADMIN_ROLES } from '../../middleware/requireRole.js'
 import { serializeAdminUser } from '../../serializers/admin/user.serializer.js'
 import type {
@@ -71,12 +69,9 @@ export const me: RequestHandler = async (req: Request, res: Response) => {
 
 export const forgotPassword: RequestHandler = async (req, res) => {
   const { email } = req.body as ForgotPasswordInput
-  const token = await authService.createPasswordResetToken(email, ADMIN_ROLES)
-
-  if (token) {
-    // TODO(phase 9): hand this to the mailer. Until then it is a dev-only log.
-    logger.info({ email, resetToken: isProduction ? '[redacted]' : token }, 'password reset issued')
-  }
+  // The service queues the email to the admin app's reset URL. Nothing is
+  // returned and nothing is logged — the token is a credential.
+  await authService.createPasswordResetToken(email, ADMIN_ROLES)
 
   // Byte-identical whether or not the account exists. In development the token
   // is in the API log; returning it here would rebuild the exact existence

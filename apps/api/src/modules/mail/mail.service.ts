@@ -37,6 +37,116 @@ export async function enqueueMail(job: MailJobData, options: EnqueueOptions = {}
   })
 }
 
+// ─── the messages, one helper each ───────────────────────────────────────────
+
+/**
+ * `-` separates the prefix from the id, not `:`. BullMQ composes its Redis keys
+ * as `bull:<queue>:<jobId>` and rejects any custom id containing a colon —
+ * which it does at `queue.add` time, so the enqueue throws rather than silently
+ * skipping deduplication.
+ *
+ * Every message gets a **deterministic `jobId`**, and choosing the right key is
+ * the whole game — BullMQ treats two jobs with the same id as one, so a key
+ * that is too broad silently swallows a legitimate second send and one that is
+ * too narrow lets a retry duplicate.
+ *
+ * Each helper below states its key and why. They are the only sanctioned way to
+ * queue these messages; nothing should call `enqueueMail` with a hand-built id.
+ */
+
+export async function sendVerifyEmail(args: {
+  to: string
+  firstName: string | null
+  token: string
+  tokenId: string
+  audience: 'shop' | 'admin'
+}): Promise<void> {
+  await enqueueMail(
+    {
+      template: 'auth.verify',
+      to: args.to,
+      data: { firstName: args.firstName, token: args.token, audience: args.audience },
+    },
+    {
+      priority: MAIL_PRIORITY.INTERACTIVE,
+      // Keyed on the token row, not the user: "resend" mints a fresh token and
+      // invalidates the old one, so each issued token is its own event and a
+      // user-keyed id would make the second link never arrive.
+      jobId: `auth.verify-${args.tokenId}`,
+    },
+  )
+}
+
+export async function sendPasswordReset(args: {
+  to: string
+  firstName: string | null
+  token: string
+  tokenId: string
+  audience: 'shop' | 'admin'
+}): Promise<void> {
+  await enqueueMail(
+    {
+      template: 'auth.reset',
+      to: args.to,
+      data: { firstName: args.firstName, token: args.token, audience: args.audience },
+    },
+    {
+      priority: MAIL_PRIORITY.INTERACTIVE,
+      // Same reasoning as verification: one email per token issued.
+      jobId: `auth.reset-${args.tokenId}`,
+    },
+  )
+}
+
+export async function sendWelcome(args: { to: string; firstName: string | null; userId: string }): Promise<void> {
+  await enqueueMail(
+    { template: 'auth.welcome', to: args.to, data: { firstName: args.firstName } },
+    {
+      // Keyed on the user, and only on the user: an account is welcomed once
+      // in its life, however many times a verification link is double-clicked.
+      jobId: `auth.welcome-${args.userId}`,
+    },
+  )
+}
+
+export async function sendOrderConfirmation(args: {
+  to: string
+  orderId: string
+}): Promise<void> {
+  await enqueueMail(
+    { template: 'order.confirmation', to: args.to, data: { orderId: args.orderId } },
+    {
+      // Keyed on the order. Providers retry webhooks and reconciliation runs
+      // the same handler on a schedule, so this path is entered repeatedly by
+      // design — the unique index stops the duplicate order, this stops the
+      // duplicate email.
+      jobId: `order.confirmation-${args.orderId}`,
+    },
+  )
+}
+
+export async function sendOrderShipped(args: {
+  to: string
+  orderId: string
+  statusHistoryId: string
+}): Promise<void> {
+  await enqueueMail(
+    { template: 'order.shipped', to: args.to, data: { orderId: args.orderId } },
+    {
+      /**
+       * Keyed on the status-history row, **not** the order — the one key on
+       * this list where the obvious choice is wrong.
+       *
+       * `order-status.ts` deliberately permits SHIPPED → PROCESSING, so an
+       * operator can ship, correct a mistake, and ship again. Keyed on the
+       * order, that second and entirely real shipment would send nothing.
+       * Every transition writes its own history row, so that row is the event.
+       */
+      jobId: `order.shipped-${args.statusHistoryId}`,
+    },
+  )
+}
+
 /**
  * Renders and sends. Called by the worker, and by nothing else.
  *

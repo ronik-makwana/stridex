@@ -16,7 +16,13 @@ export const authApi = {
     await api.post('/auth/logout')
   },
 
-  verifyEmail: (body: { token: string }) => post<{ user: ShopUser }>('/auth/verify-email', body),
+  /**
+   * `alreadyVerified` separates the two successes: a link consumed now, and one
+   * clicked again after it had already done its job. The user object is
+   * identical in both cases, so without this flag the page cannot tell.
+   */
+  verifyEmail: (body: { token: string }) =>
+    post<{ user: ShopUser; alreadyVerified: boolean }>('/auth/verify-email', body),
 
   resendVerification: (body: { email: string }) =>
     post<MessageResponse>('/auth/resend-verification', body),

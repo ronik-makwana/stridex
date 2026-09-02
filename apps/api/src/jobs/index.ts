@@ -1,5 +1,6 @@
 import { sweepExpiredSessions, sweepOrphanedHolds } from '../modules/checkout/expiry.service.js'
 import { reconcilePendingPayments } from '../modules/payments/reconcile.service.js'
+import { sweepUnsentConfirmations } from '../modules/mail/mail.sweep.js'
 
 /**
  * A recurring background job.
@@ -40,6 +41,16 @@ export const jobs: Job[] = [
       const orphans = await sweepOrphanedHolds()
       return { ...expired, ...orphans }
     },
+  },
+  {
+    name: 'mail.confirmations',
+    /**
+     * Ten minutes. It only looks at orders already five minutes old, so this
+     * is not a latency path — it is the net under the gap between the order
+     * transaction committing and its confirmation being queued.
+     */
+    everyMs: 10 * 60_000,
+    run: () => sweepUnsentConfirmations(),
   },
   {
     name: 'payments.reconcile',

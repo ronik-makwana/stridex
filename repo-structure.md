@@ -122,7 +122,8 @@ apps/api/src/
 │   ├── mail/
 │   │   ├── providers/                MailProvider; smtp + log, chosen by env
 │   │   ├── templates/                layout enforces an HTML + text pair
-│   │   └── mail.service.ts           enqueue on one side, render+send on the other
+│   │   ├── mail.service.ts           enqueue on one side, render+send on the other
+│   │   └── mail.sweep.ts             the net under the commit-to-enqueue gap
 │   ├── cart/                         storefront only, incl. merge on login
 │   ├── wishlist/                     storefront only
 │   ├── checkout/                     storefront only

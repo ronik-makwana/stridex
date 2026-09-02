@@ -9,6 +9,8 @@ import {
 } from '../../serializers/admin/order.serializer.js'
 import type { OrderListQuery, UpdateOrderStatusInput } from '../../schemas/admin/order.schema.js'
 import { assertTransition } from './order-status.js'
+import { sendOrderShipped } from '../mail/mail.service.js'
+import { logger } from '../../lib/logger.js'
 
 /**
  * Orders, from the other side of the counter.
@@ -115,7 +117,7 @@ export async function updateStatus(
 
   assertTransition(order.status, input.status)
 
-  await prisma.$transaction([
+  const [, history] = await prisma.$transaction([
     prisma.order.update({ where: { id }, data: { status: input.status } }),
     prisma.orderStatusHistory.create({
       data: {
@@ -127,6 +129,8 @@ export async function updateStatus(
       },
     }),
   ])
+
+  if (input.status === 'SHIPPED') await queueShippedEmail(id, history.id)
 
   return findById(id)
 }
@@ -155,4 +159,31 @@ export async function history(id: string) {
       : null,
     createdAt: entry.createdAt,
   }))
+}
+
+/**
+ * Queues the "on its way" email, after the transaction rather than inside it.
+ *
+ * Keyed on the **history row**, not the order. `order-status.ts` allows
+ * SHIPPED → PROCESSING so an operator can correct a mistake and ship again, and
+ * an order-keyed job id would make that second, entirely real shipment send
+ * nothing at all. Each transition writes its own history row, so that row is
+ * the event.
+ *
+ * Failures are logged, not thrown: the status change is done and correct, and
+ * an operator should not see a 500 — and be tempted to click again — because a
+ * queue blinked.
+ */
+async function queueShippedEmail(orderId: string, statusHistoryId: string): Promise<void> {
+  try {
+    const order = await prisma.order.findUnique({
+      where: { id: orderId },
+      select: { user: { select: { email: true } } },
+    })
+    if (!order?.user?.email) return
+
+    await sendOrderShipped({ to: order.user.email, orderId, statusHistoryId })
+  } catch (error) {
+    logger.error({ err: error, orderId }, 'could not queue shipped email')
+  }
 }

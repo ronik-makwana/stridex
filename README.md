@@ -247,7 +247,7 @@ npm run services:down
 
 | | |
 |---|---|
-| 📧 **Email** | The pipe works — queue, worker, SMTP, templates — but nothing is wired to an event yet. Verification tokens are still returned by the API instead of mailed |
+| 📧 **Email** | Sending. Verification, reset, welcome, order confirmation and shipped all go out through the queue. No bounce handling, and the shipped email carries no tracking number because orders have no field for one |
 | 💸 **Refunds** | The statuses exist; no money moves |
 | 💳 **Real gateway** | The provider is a mock that signs its own webhooks — the path is real, the gateway isn't |
 | 🧾 **Tax** | `taxAmount` is written zero, by decision |

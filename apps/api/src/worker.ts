@@ -59,6 +59,15 @@ async function syncSchedulers(): Promise<void> {
 export async function startWorker(): Promise<() => Promise<void>> {
   await syncSchedulers()
 
+  /**
+   * Held for shutdown, for the same reason as the queue connections: BullMQ
+   * closes connections it created, never ones it was handed.
+   */
+  const workerConnections = [
+    createQueueConnection('maintenance-worker'),
+    createQueueConnection('mail-worker'),
+  ]
+
   const worker = new Worker(
     MAINTENANCE_QUEUE,
     async (job) => {
@@ -76,7 +85,7 @@ export async function startWorker(): Promise<() => Promise<void>> {
       return result
     },
     {
-      connection: createQueueConnection('maintenance-worker'),
+      connection: workerConnections[0]!,
       /**
        * One at a time. It does not make overlap impossible — two workers can
        * still each pick up a sweep — but it keeps a single worker from stacking
@@ -107,7 +116,7 @@ export async function startWorker(): Promise<() => Promise<void>> {
     MAIL_QUEUE,
     async (job) => processMail(job.data),
     {
-      connection: createQueueConnection('mail-worker'),
+      connection: workerConnections[1]!,
       concurrency: 5,
     },
   )
@@ -139,6 +148,7 @@ export async function startWorker(): Promise<() => Promise<void>> {
     clearInterval(heartbeat)
     // Waits for the jobs in flight rather than severing a sweep or a send.
     await Promise.allSettled([worker.close(), mailWorker.close()])
+    await Promise.allSettled(workerConnections.map((connection) => connection.quit()))
     // After the workers, or an in-flight send loses its transport mid-message.
     closeSmtp()
   }

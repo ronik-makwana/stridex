@@ -2,6 +2,7 @@ import { Prisma } from '@shoe/db'
 import { prisma } from '../../lib/prisma.js'
 import { badRequest } from '../../lib/errors.js'
 import { logger } from '../../lib/logger.js'
+import { sendOrderConfirmation } from '../mail/mail.service.js'
 import type { ParsedWebhook } from './providers/provider.types.js'
 
 /**
@@ -98,7 +99,28 @@ export async function handleProviderEvent(
     throw badRequest('That amount does not match the quoted total')
   }
 
-  return capturePayment(payment.id, event)
+  const outcome = await capturePayment(payment.id, event)
+
+  /**
+   * The confirmation, queued **after** `capturePayment` has returned — which is
+   * to say after its transaction has committed.
+   *
+   * Queuing inside that transaction would let the worker read the order before
+   * it exists, or send a confirmation for an order a later failure rolled back.
+   * This is the first line where the order is a fact.
+   *
+   * Every path through this function ends up here, including the duplicate
+   * delivery above and reconciliation, which calls this same function on a
+   * schedule. That is intended: the job id is keyed on the order, so entering
+   * repeatedly is what makes the email reliable rather than what duplicates it.
+   */
+  // `handled` first: the outcome is a discriminated union and `action` only
+  // exists on the handled arm.
+  if (outcome.handled && outcome.action === 'CAPTURED' && outcome.orderId) {
+    await queueOrderConfirmation(outcome.orderId)
+  }
+
+  return outcome
 }
 
 // ─── success ─────────────────────────────────────────────────────────────────
@@ -376,4 +398,41 @@ async function failPayment(paymentId: string, event: ParsedWebhook): Promise<Web
 
     return { handled: true, action: 'FAILED' }
   })
+}
+
+/**
+ * Queues the confirmation and records that it was queued.
+ *
+ * `confirmationSentAt` is what the sweep in `jobs/index.ts` reads: an order
+ * that reaches PAID and never gets this far — the process died between the
+ * commit and this line — is found later and queued then. Written after the
+ * enqueue succeeds, so a failure here leaves the column null and the sweep
+ * picks it up rather than recording a send that never happened.
+ */
+async function queueOrderConfirmation(orderId: string): Promise<void> {
+  try {
+    const order = await prisma.order.findUnique({
+      where: { id: orderId },
+      select: { id: true, confirmationSentAt: true, user: { select: { email: true } } },
+    })
+
+    // No account means no address to send to — a guest checkout, if one is ever
+    // allowed. Nothing to do, and nothing wrong.
+    if (!order?.user?.email) return
+    if (order.confirmationSentAt) return
+
+    await sendOrderConfirmation({ to: order.user.email, orderId })
+    await prisma.order.update({
+      where: { id: orderId },
+      data: { confirmationSentAt: new Date() },
+    })
+  } catch (error) {
+    /**
+     * Swallowed on purpose. The order is paid for and recorded; a queue that is
+     * briefly unreachable must not make this webhook answer 500, because the
+     * provider would then retry an event that was fully and correctly handled.
+     * The column stays null and the sweep sends it.
+     */
+    logger.error({ err: error, orderId }, 'could not queue order confirmation — sweep will retry')
+  }
 }
