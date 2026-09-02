@@ -6,6 +6,7 @@ import { pinoHttp } from 'pino-http'
 import { env, isProduction } from './config/env.js'
 import { logger } from './lib/logger.js'
 import { globalLimiter } from './middleware/rateLimit.js'
+import { readWorkerHealth } from './lib/queue.js'
 import { errorHandler, notFoundHandler } from './middleware/errorHandler.js'
 import { adminRouter } from './routes/admin.routes.js'
 import { shopRouter } from './routes/shop.routes.js'
@@ -81,8 +82,24 @@ export function createApp(): Express {
 
   app.use(globalLimiter)
 
-  app.get('/health', (_req, res) => {
-    res.json({ status: 'ok', uptime: process.uptime(), env: env.NODE_ENV })
+  /**
+   * Reports the worker as well as itself. Before Phase 21 the API process *was*
+   * the scheduler, so "the API is up" implied "the sweeps are running" — and
+   * splitting the worker out broke that implication silently. `worker: stale`
+   * is what makes a worker that died visible from the endpoint people already
+   * check, rather than from stock that never gets released.
+   *
+   * Still a 200 either way: the API genuinely is serving, and flipping this to
+   * a 500 would take healthy instances out of a load balancer over a
+   * background job.
+   */
+  app.get('/health', async (_req, res) => {
+    res.json({
+      status: 'ok',
+      uptime: process.uptime(),
+      env: env.NODE_ENV,
+      worker: await readWorkerHealth(),
+    })
   })
 
   app.use('/api/admin', adminRouter)

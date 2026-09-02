@@ -66,6 +66,48 @@ redis.on('ready', () => {
   down = false
 })
 
+/**
+ * A second connection, for BullMQ.
+ *
+ * Not sharing `redis` above is deliberate and unavoidable: the two callers want
+ * opposite things from a connection.
+ *
+ * `redis` is tuned to give up — `commandTimeout` and a finite
+ * `maxRetriesPerRequest` — because a cache read that hangs is a request that
+ * hangs, and the right answer for a cache is to fail and go to Postgres.
+ *
+ * A worker wants the opposite. It blocks on `BRPOPLPUSH` for seconds at a time
+ * by design, so a one-second command timeout would sever it mid-wait, and
+ * BullMQ requires `maxRetriesPerRequest: null` so that a Redis blip suspends
+ * the worker rather than throwing job processing out from under it.
+ *
+ * One connection cannot be both. Each queue and worker gets its own via this
+ * factory; BullMQ additionally duplicates it internally for blocking commands.
+ */
+export function createQueueConnection(name: string): Redis {
+  const client = new Redis(env.REDIS_URL, {
+    // Required by BullMQ. Overriding it is documented as unsupported.
+    maxRetriesPerRequest: null,
+    retryStrategy: (times) => Math.min(times * 200, 10_000),
+    connectionName: `stridex-${name}`,
+  })
+
+  // Same once-per-outage discipline as the main client, and the same reason:
+  // without a listener, ioredis emits 'error' on the process and ends it.
+  let queueDown = false
+  client.on('error', (error: Error) => {
+    if (queueDown) return
+    queueDown = true
+    logger.error({ err: error, connection: name }, 'queue redis unreachable')
+  })
+  client.on('ready', () => {
+    if (queueDown) logger.info({ connection: name }, 'queue redis recovered')
+    queueDown = false
+  })
+
+  return client
+}
+
 /** Closes the connection on shutdown. Never throws; a shutdown path must not. */
 export async function disconnectRedis(): Promise<void> {
   try {

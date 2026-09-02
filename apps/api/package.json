@@ -8,11 +8,13 @@
     "build": "tsup",
     "start": "node dist/server.js",
     "typecheck": "tsc --noEmit",
-    "job": "tsx --env-file=.env src/jobs/run.ts"
+    "job": "tsx --env-file=.env src/jobs/run.ts",
+    "worker": "tsx watch --env-file=.env src/worker.ts"
   },
   "dependencies": {
     "@shoe/db": "*",
     "argon2": "^0.45.1",
+    "bullmq": "^6.3.4",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.6",
     "dotenv": "^17.2.3",

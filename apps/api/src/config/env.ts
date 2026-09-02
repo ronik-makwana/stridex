@@ -52,6 +52,18 @@ const envSchema = z.object({
    */
   PAYMENT_MOCK_SECRET: z.string().min(16).default('mock_webhook_secret_change_me'),
 
+  /**
+   * Runs the background worker inside the API process.
+   *
+   * Defaulted on in development so `npm run dev` stays one command, and off
+   * elsewhere: in production the worker is its own deployment, and an API that
+   * quietly also processes jobs makes "how many workers are running?" a
+   * question you answer by counting API instances.
+   */
+  RUN_WORKER_INLINE: z
+    .stringbool()
+    .default(process.env.NODE_ENV !== 'production' && process.env.NODE_ENV !== 'test'),
+
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info'),
 })
 

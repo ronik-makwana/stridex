@@ -1,7 +1,8 @@
 import { defineConfig } from 'tsup'
 
 export default defineConfig({
-  entry: ['src/server.ts'],
+  // Two entrypoints: the API and the worker deploy as separate processes.
+  entry: ['src/server.ts', 'src/worker.ts'],
   format: ['esm'],
   target: 'node22',
   outDir: 'dist',

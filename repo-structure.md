@@ -138,20 +138,27 @@ apps/api/src/
 ├── lib/
 │   ├── prisma.ts                     re-export from @shoe/db
 │   ├── s3.ts                         presigned PUT
-│   ├── redis.ts
+│   ├── redis.ts                      required; one client + a BullMQ factory
+│   ├── queue.ts                      queues, job options, worker heartbeat
 │   ├── logger.ts
 │   └── errors.ts
+├── jobs/
+│   ├── index.ts                      the registry: what runs in the background
+│   └── run.ts                        one job, once, from the CLI — no broker
 ├── routes/
 │   ├── admin.routes.ts               mounts /api/admin/*
 │   └── shop.routes.ts                mounts /api/storefront/*
 ├── types/express.d.ts
 ├── app.ts
-└── server.ts
+├── server.ts                         the API process
+└── worker.ts                         the job process
 
 apps/api/tests/
 ├── integration/                      Supertest + Testcontainers
 └── unit/                             services, rules engine, variant generate
 ```
+
+`server.ts` and `worker.ts` are two entrypoints over one codebase, not two services. The worker imports the same modules and the same Prisma client; what differs is that it processes the queue instead of serving HTTP. In development it runs inside the API process (`RUN_WORKER_INLINE`) so there is still one command to start; in production it is a separate deployment, and `/health` reports whether it is alive.
 
 Services are shared inside the API. Controllers, schemas and serializers split by audience. `productService.findMany()` is one function, but the admin controller returns drafts and cost fields while the shop controller returns only `ACTIVE` products with a public payload.
 

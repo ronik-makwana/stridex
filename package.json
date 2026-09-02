@@ -2,10 +2,16 @@
   "name": "shoe",
   "private": true,
   "type": "module",
-  "workspaces": ["apps/*", "packages/*"],
-  "engines": { "node": ">=22.0.0" },
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "engines": {
+    "node": ">=22.0.0"
+  },
   "scripts": {
     "dev:api": "npm run dev -w apps/api",
+    "dev:worker": "npm run worker -w apps/api",
     "dev:admin": "npm run dev -w apps/admin",
     "dev:shop": "npm run dev -w apps/storefront",
     "build:api": "npm run build -w apps/api",

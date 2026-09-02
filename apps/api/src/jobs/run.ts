@@ -1,7 +1,7 @@
 import 'dotenv/config'
 import { logger } from '../lib/logger.js'
 import { prisma } from '../lib/prisma.js'
-import { runOnce } from '../lib/scheduler.js'
+import { disconnectRedis } from '../lib/redis.js'
 import { jobs, jobsByName } from './index.js'
 
 /**
@@ -13,6 +13,11 @@ import { jobs, jobsByName } from './index.js'
  * rather than waiting a minute for one. And an operator who would rather run
  * these from a real cron — or from a container that is not the API — can,
  * without the API process having to be the scheduler.
+ *
+ * **Runs the handler directly, not through the queue.** Enqueuing here would
+ * mean this command did nothing unless a worker happened to be listening, and
+ * would report success for work that had not started. The handler is the thing
+ * being tested; the queue is how it is scheduled the rest of the time.
  */
 const name = process.argv[2]
 
@@ -27,6 +32,16 @@ if (!job) {
   process.exit(1)
 }
 
-await runOnce(job)
-logger.info({ job: job.name }, 'Job finished')
-await prisma.$disconnect()
+const startedAt = Date.now()
+try {
+  const result = await job.run()
+  logger.info({ job: job.name, ms: Date.now() - startedAt, result }, 'Job finished')
+} catch (error) {
+  // A non-zero exit, unlike the worker: a person or a cron is watching this one
+  // and needs to know it failed.
+  logger.error({ err: error, job: job.name }, 'Job failed')
+  await Promise.allSettled([prisma.$disconnect(), disconnectRedis()])
+  process.exit(1)
+}
+
+await Promise.allSettled([prisma.$disconnect(), disconnectRedis()])

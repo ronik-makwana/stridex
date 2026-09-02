@@ -62,7 +62,7 @@ verified — 23 of 27 fully, with tax and refunds the known gaps.
 ```bash
 npm install
 cp .env.example apps/api/.env       # fill in the two JWT secrets
-npm run services:up                 # postgres, minio, redis
+npm run services:up                 # postgres, minio, redis, mailpit
 npm run db:migrate
 npm run db:seed
 ```
@@ -150,6 +150,7 @@ search       tags         testimonials uploads      variant-options  wishlist
 ```
 apps/
   api/          Express 5 · Zod validation · Prisma · pino · JWT
+                two entrypoints: server.ts (HTTP) and worker.ts (BullMQ)
   admin/        React 19 · Vite · Tailwind v4 · shadcn · TanStack Query
   storefront/   React 19 · Vite · Tailwind v4 · its own design system
 packages/
@@ -219,14 +220,17 @@ that reordered itself when a discount was applied.
 
 ```bash
 npm run dev:api | dev:admin | dev:shop        # development
+npm run dev:worker                            # background jobs, if run separately
 npm run build:api | build:admin | build:shop  # production build
+
+npm run job -w apps/api -- checkout.expiry    # run one job now, no broker
 
 npm run db:migrate     # create and apply a migration
 npm run db:deploy      # apply pending migrations
 npm run db:seed        # admin + dev fixtures
 npm run db:studio      # Prisma Studio
 
-npm run services:up    # postgres, minio, redis
+npm run services:up    # postgres, minio, redis, mailpit
 npm run services:down
 ```
 
@@ -249,8 +253,9 @@ npm run services:down
 | 🔭 **Monitoring** | A 500 in production would be invisible |
 | 🔍 **SEO** | Phase 19 — page titles, JSON-LD, sitemap, error boundaries |
 
-Redis now backs the rate-limit counters, so a limit means the same thing
-across every API process. `REDIS_URL` is **required** and validated at boot
+Redis now backs the rate-limit counters and the job queue, so a rate limit and
+a scheduled sweep each mean the same thing across every API process — where
+before, N instances ran N sweeps per interval. `REDIS_URL` is **required** and validated at boot
 alongside `DATABASE_URL` — there is no fallback path, because the behaviour it
 would fall back to (a login limit that means something different on every
 instance) is wrong rather than merely slower. Redis going down at runtime is a

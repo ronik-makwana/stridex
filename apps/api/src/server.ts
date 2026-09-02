@@ -4,9 +4,9 @@ import { env } from './config/env.js'
 import { logger } from './lib/logger.js'
 import { prisma } from './lib/prisma.js'
 import { disconnectRedis } from './lib/redis.js'
+import { closeQueues } from './lib/queue.js'
 import { ensureBucket } from './config/minio.js'
-import { startJobs } from './lib/scheduler.js'
-import { jobs } from './jobs/index.js'
+import { startWorker } from './worker.js'
 
 const app = createApp()
 
@@ -22,17 +22,26 @@ void ensureBucket()
   .catch((error) => logger.error({ err: error }, 'object storage unavailable — uploads will fail'))
 
 /**
- * Expiry and reconciliation. Started here rather than inside the app so that a
- * test importing `createApp()` does not quietly acquire a scheduler, and so an
- * operator can run the same jobs from cron instead — see src/jobs/run.ts.
+ * The background worker, in-process, for development only — see
+ * `RUN_WORKER_INLINE`. Started here rather than inside the app so that a test
+ * importing `createApp()` does not quietly acquire one.
+ *
+ * In production the worker is a separate process (`npm run worker`), so this
+ * resolves to a no-op and the API only ever produces jobs.
  */
-const stopJobs = startJobs(jobs)
+let stopWorker: (() => Promise<void>) | undefined
+if (env.RUN_WORKER_INLINE) {
+  stopWorker = await startWorker()
+  logger.info('worker running inline — set RUN_WORKER_INLINE=false to split it out')
+}
 
 async function shutdown(signal: string) {
-  stopJobs()
   logger.info({ signal }, 'shutting down')
+  // Before the connections close: an in-flight sweep finishes rather than
+  // being severed halfway through a transaction.
+  await stopWorker?.()
   server.close(async () => {
-    await Promise.allSettled([prisma.$disconnect(), disconnectRedis()])
+    await Promise.allSettled([closeQueues(), prisma.$disconnect(), disconnectRedis()])
     process.exit(0)
   })
   // Do not let a hung connection hold the process open forever.
