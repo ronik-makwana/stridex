@@ -27,7 +27,7 @@ services:
     # eu-central-1. Putting the API nearer an INR audience would put it a
     # Pacific round trip away from its own database on every query, which costs
     # far more than the last mile to the browser does.
-    region: ohio
+    region: singapore
     branch: main
     healthCheckPath: /health
 
