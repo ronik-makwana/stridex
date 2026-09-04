@@ -1,5 +1,5 @@
 import { Router } from 'express'
-import { authenticate } from '../middleware/auth.js'
+import { authenticate, requireLiveSessionForWrites } from '../middleware/auth.js'
 import { requireAdminSession } from '../middleware/requireRole.js'
 import { invalidateOnWrite } from '../middleware/cacheInvalidation.js'
 import { adminAuthRouter } from '../modules/auth/admin.auth.routes.js'
@@ -33,6 +33,23 @@ adminRouter.use('/auth', adminAuthRouter)
 // applied once here rather than repeated in each feature router, so a new
 // module cannot ship unauthenticated by omission.
 adminRouter.use(authenticate, requireAdminSession)
+
+/**
+ * And on top of that, for writes only: confirm the session is still live, then
+ * apply the role gate a second time.
+ *
+ * `authenticate` is stateless by design, so a revoked session or a suspended
+ * account keeps working until its access token expires. That is an acceptable
+ * window for reading a product list and not for deleting one.
+ *
+ * The repeated `requireAdminSession` is not redundant, and leaving it out was a
+ * bug the tests caught. The gate above ran against the **token's** role claim;
+ * `requireLiveSessionForWrites` then refreshes `req.user.role` from the user
+ * row. Without re-checking, an admin demoted to CUSTOMER mid-session still
+ * passed the only gate that ever looked — the refreshed role was written and
+ * then nothing read it.
+ */
+adminRouter.use(requireLiveSessionForWrites, requireAdminSession)
 
 /**
  * After the auth wall, before the feature routers: every catalogue write below

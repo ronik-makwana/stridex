@@ -5,6 +5,8 @@ import helmet from 'helmet'
 import { pinoHttp } from 'pino-http'
 import { env, isProduction } from './config/env.js'
 import { logger } from './lib/logger.js'
+import { prisma } from './lib/prisma.js'
+import { redis } from './lib/redis.js'
 import { globalLimiter } from './middleware/rateLimit.js'
 import { readWorkerHealth } from './lib/queue.js'
 import { errorHandler, notFoundHandler } from './middleware/errorHandler.js'
@@ -99,6 +101,44 @@ export function createApp(): Express {
       uptime: process.uptime(),
       env: env.NODE_ENV,
       worker: await readWorkerHealth(),
+    })
+  })
+
+  /**
+   * Readiness, which is a different question from liveness and needs a
+   * different answer.
+   *
+   * `/health` above says "this process is running", and deliberately stays 200
+   * even when the worker is stale — an instance is still serving requests and
+   * pulling it from a load balancer over a background job would be worse.
+   *
+   * But an instance whose database pool is exhausted or whose Postgres is gone
+   * is not serving anything; it is answering 500 to every request while the
+   * load balancer keeps sending traffic, because the only thing being checked
+   * is that the process replies. This endpoint actually asks the dependencies.
+   *
+   * Redis is reported and does **not** fail the check, matching how the rest of
+   * the code treats it: the cache falls through to Postgres and the limiters
+   * let requests past when the store is unreachable, so a Redis outage is a
+   * slower instance rather than a broken one. Postgres is the opposite — there
+   * is nothing to serve without it.
+   */
+  app.get('/ready', async (_req, res) => {
+    const [database, cache] = await Promise.all([
+      prisma
+        .$queryRaw`SELECT 1`
+        .then(() => true)
+        .catch(() => false),
+      redis
+        .ping()
+        .then(() => true)
+        .catch(() => false),
+    ])
+
+    res.status(database ? 200 : 503).json({
+      status: database ? 'ready' : 'unavailable',
+      database,
+      cache,
     })
   })
 

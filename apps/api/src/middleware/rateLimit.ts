@@ -58,6 +58,23 @@ function sharedStore(prefix: string): Store {
   })
 }
 
+/**
+ * The one prefix no limiter may ever apply to.
+ *
+ * A payment provider is not a client of ours competing for capacity — it is
+ * telling us money moved, and it will retry anything that is not 2xx. A 429
+ * there does not shed load, it delays a confirmation and then asks for it
+ * again, which is the opposite of what a limiter is for. The endpoint's real
+ * protection is the signature check (§8), not a request count.
+ *
+ * This lives here rather than being expressed by mounting the webhook router
+ * above `globalLimiter` in `app.ts`, because mount order is invisible from the
+ * file where limits are declared — and it was already wrong once: the comments
+ * on `webhooks.routes.ts` and `webhooks.controller.ts` both promised no rate
+ * limiting while the app-wide limiter sat in front of them.
+ */
+const WEBHOOK_PREFIX = '/api/webhooks/'
+
 /** Blanket limiter for the whole API. Generous — this is a spike guard. */
 export const globalLimiter = rateLimit({
   windowMs: 60_000,
@@ -65,6 +82,8 @@ export const globalLimiter = rateLimit({
   standardHeaders: 'draft-7',
   legacyHeaders: false,
   store: sharedStore('rl:global:'),
+  // Mounted app-wide, so this is the only thing keeping webhooks out of it.
+  skip: (req) => req.path.startsWith(WEBHOOK_PREFIX),
   ...storeErrorPolicy,
   handler,
 })
