@@ -1,4 +1,5 @@
 import { Prisma } from '@shoe/db'
+import { env } from '../../config/env.js'
 import { money } from './money.js'
 import { serializeShopAddress } from './address.serializer.js'
 
@@ -153,6 +154,18 @@ export function serializeCheckoutSession(
     order: session.order
       ? { id: session.order.id, orderNumber: session.order.orderNumber }
       : null,
+    /**
+     * Who will take the money, so the page can say so *before* Pay is pressed.
+     *
+     * The alternative was a build-time flag in the storefront, which is the
+     * same fact written down twice and therefore a fact that will eventually
+     * disagree with itself. This is the server's answer, and the server is the
+     * one that decides.
+     *
+     * Not a secret: it is a name, not a key. What the browser needs to actually
+     * pay comes back from `POST /payments` as `clientPayload` and only then.
+     */
+    paymentProvider: env.PAYMENT_PROVIDER,
     createdAt: session.createdAt,
   }
 }

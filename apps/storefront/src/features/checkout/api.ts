@@ -57,11 +57,4 @@ export const checkoutApi = {
   },
 
   payment: (id: string) => get<Payment>(`/payments/${id}`),
-
-  /**
-   * Development only. Stands in for the provider's hosted page: the API signs a
-   * webhook and posts it to its own endpoint, so the real path runs.
-   */
-  mockComplete: (paymentId: string, outcome: 'success' | 'fail') =>
-    post<unknown>(`/payments/${paymentId}/mock-complete`, { outcome }),
 }

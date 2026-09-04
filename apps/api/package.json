@@ -10,7 +10,8 @@
     "typecheck": "tsc --noEmit",
     "job": "tsx --env-file=.env src/jobs/run.ts",
     "mail:test": "tsx --env-file=.env src/jobs/mail-test.ts",
-    "worker": "tsx watch --env-file=.env src/worker.ts"
+    "worker": "tsx watch --env-file=.env src/worker.ts",
+    "tunnel": "cloudflared tunnel --url http://localhost:4000"
   },
   "dependencies": {
     "@shoe/db": "*",

@@ -1,15 +1,25 @@
 import { env } from '../../../config/env.js'
 import { notFound } from '../../../lib/errors.js'
-import { mockProvider } from './mock.provider.js'
+import { razorpayProvider } from './razorpay.provider.js'
 import type { PaymentProvider } from './provider.types.js'
 
 /**
- * One provider per name, chosen by configuration rather than by an import
- * somewhere in the service — which is what keeps `payments.service.ts` from
- * knowing that Razorpay exists.
+ * Every provider this deployment can act as.
+ *
+ * The map is keyed by name rather than collapsed into a single export because
+ * refunds and reconciliation resolve their provider from the row they are
+ * acting on (`getProvider(row.provider)` in `refunds.service.ts` and both
+ * reconcilers), not from `PAYMENT_PROVIDER`. A payment is always settled by
+ * whoever took it, which is what makes adding a second provider later a
+ * registration rather than a migration.
+ *
+ * A corollary worth knowing: rows naming a provider that is no longer here
+ * cannot be refunded or reconciled. `getProvider` throws below rather than
+ * guessing, so the failure names the missing provider instead of quietly
+ * settling money through the wrong one.
  */
 const PROVIDERS: Record<string, PaymentProvider> = {
-  [mockProvider.name]: mockProvider,
+  [razorpayProvider.name]: razorpayProvider,
 }
 
 /**

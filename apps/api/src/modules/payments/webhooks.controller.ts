@@ -13,6 +13,7 @@ import { handleProviderEvent } from './webhook.service.js'
  * that is not 2xx, so:
  *
  *   - bad signature       → 401, and it stops
+ *   - event we ignore     → 200, because it will never become interesting
  *   - unknown payment     → 200, because retrying will never make it known
  *   - handled, or already → 200
  *   - our own failure     → 500, because a retry genuinely might work
@@ -33,7 +34,17 @@ export const receive: RequestHandler = async (req, res) => {
     throw unauthorized('That signature does not verify')
   }
 
+  /**
+   * Null means "a real event of theirs that we do not act on" — `order.paid`, a
+   * settlement, whatever they add next. 200 and done: it is not an error, and
+   * anything else here would have them redeliver it until they gave up.
+   */
   const event = provider.parseWebhook(raw)
+  if (!event) {
+    logger.info({ provider: providerName }, 'Webhook understood and not acted on')
+    return void res.status(200).json({ received: true, handled: false, reason: 'Event not acted on' })
+  }
+
   const outcome = await handleProviderEvent(provider.name, event)
 
   if (!outcome.handled) {

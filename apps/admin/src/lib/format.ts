@@ -3,16 +3,37 @@
  * for display — never for arithmetic. Formatting is the one place a float is
  * harmless, because nothing downstream reads it back.
  */
-const currency = new Intl.NumberFormat('en-IN', {
+/**
+ * The same rule the storefront uses, deliberately — two decimals or none.
+ *
+ * An order is one order however you are looking at it, and a refund quoted to
+ * a customer as ₹1.98 has to be the ₹1.98 the person approving it sees. The
+ * two apps having their own opinion about trailing zeros is how a support
+ * conversation ends up comparing ₹2,048.20 against ₹2,048 and wondering which
+ * one moved.
+ *
+ * Never one decimal: a plain `maximumFractionDigits: 2` renders ₹2,048.20 as
+ * "₹2,048.2", which reads like a number that lost a digit on the way here.
+ */
+const wholeRupees = new Intl.NumberFormat('en-IN', {
+  style: 'currency',
+  currency: 'INR',
+  minimumFractionDigits: 0,
+  maximumFractionDigits: 0,
+})
+
+const withPaise = new Intl.NumberFormat('en-IN', {
   style: 'currency',
   currency: 'INR',
   minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
 })
 
 export function formatMoney(value: string | null | undefined): string {
   if (value === null || value === undefined || value === '') return '—'
   const parsed = Number(value)
-  return Number.isFinite(parsed) ? currency.format(parsed) : String(value)
+  if (!Number.isFinite(parsed)) return String(value)
+  return Number.isInteger(parsed) ? wholeRupees.format(parsed) : withPaise.format(parsed)
 }
 
 const integers = new Intl.NumberFormat('en-IN')

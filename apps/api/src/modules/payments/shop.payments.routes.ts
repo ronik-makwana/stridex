@@ -21,11 +21,3 @@ shopPaymentsRouter.use(authenticate, requireCustomerSession)
 shopPaymentsRouter.post('/', validate({ body: createPaymentSchema }), controller.create)
 
 shopPaymentsRouter.get('/:id', validate({ params: shopUuidParamSchema }), controller.getOne)
-
-// Development only — 404 in every other environment. See the controller for why
-// it goes the long way round through the real, signed webhook.
-shopPaymentsRouter.post(
-  '/:id/mock-complete',
-  validate({ params: shopUuidParamSchema }),
-  controller.mockComplete,
-)

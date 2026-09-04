@@ -505,6 +505,12 @@ export type CheckoutSession = {
   billingAddress: Address | null
   /** Null until the webhook lands. Its arrival is what makes this an order. */
   order: { id: string; orderNumber: string } | null
+  /**
+   * Who will take the money. The page reads it only to say the right thing
+   * before Pay is pressed — what it needs to *actually* pay comes back from
+   * `POST /payments` as `clientPayload`, and not a moment earlier.
+   */
+  paymentProvider: 'razorpay'
   createdAt: string
 }
 

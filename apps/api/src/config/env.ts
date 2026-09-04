@@ -39,18 +39,38 @@ const envSchema = z.object({
   REDIS_URL: z.string().min(1),
 
   /**
-   * Which provider `POST /payments` uses. 'mock' is a real implementation of
-   * the same interface Razorpay will use — it signs its webhooks with the same
-   * HMAC-SHA256 scheme, so `verifySignature` is exercised long before real
-   * money is involved.
+   * Which provider `POST /payments` uses for **new** attempts.
+   *
+   * Only new ones. Refunds and reconciliation resolve their provider from the
+   * row (`getProvider(payment.provider)`), so this never decides how an
+   * existing payment is settled. It is a one-value enum today and stays an
+   * enum: adding a second provider should be a change here and a line in the
+   * registry, not a change of shape.
    */
-  PAYMENT_PROVIDER: z.enum(['mock']).default('mock'),
+  PAYMENT_PROVIDER: z.enum(['razorpay']).default('razorpay'),
+
   /**
-   * The mock's webhook secret. Defaulted in development because a provider
-   * nobody can run is a provider nobody tests; production must set it, and the
-   * refine below is what makes that non-optional.
+   * Razorpay. Required by the refine below rather than at the schema level, so
+   * that the failure names all three variables at once instead of stopping at
+   * whichever happens to be parsed first.
+   *
+   * `RAZORPAY_KEY_ID` is the only one of the three that reaches a browser: it
+   * rides down in `clientPayload` because Razorpay's checkout script needs it.
+   * The other two never leave this process.
    */
-  PAYMENT_MOCK_SECRET: z.string().min(16).default('mock_webhook_secret_change_me'),
+  RAZORPAY_KEY_ID: z.string().default(''),
+  RAZORPAY_KEY_SECRET: z.string().default(''),
+  /**
+   * Set on the webhook in the Razorpay dashboard, and **not** the same string
+   * as the key secret. Signing with the wrong one of the two fails every
+   * webhook with a 401 that looks exactly like an attack.
+   */
+  RAZORPAY_WEBHOOK_SECRET: z.string().default(''),
+  /**
+   * What the customer reads at the top of the Razorpay modal. Their own
+   * business name, not ours to guess.
+   */
+  RAZORPAY_DISPLAY_NAME: z.string().default('StrideX'),
 
   /**
    * Where the two SPAs actually live, for building links in email.
@@ -96,12 +116,30 @@ const envSchema = z.object({
 })
 
 const parsed = envSchema
-  // A default secret is a convenience in development and a vulnerability in
-  // production: anyone who has read this file could forge a paid webhook.
+  /**
+   * Razorpay without its credentials is a checkout that fails at the first Pay,
+   * on a 401 from an API nobody has logged into. Fail at boot, where the
+   * message names the variables.
+   */
   .refine(
     (value) =>
-      value.NODE_ENV !== 'production' || value.PAYMENT_MOCK_SECRET !== 'mock_webhook_secret_change_me',
-    { path: ['PAYMENT_MOCK_SECRET'], message: 'Set a real webhook secret in production' },
+      value.RAZORPAY_KEY_ID.length > 0 &&
+      value.RAZORPAY_KEY_SECRET.length > 0 &&
+      value.RAZORPAY_WEBHOOK_SECRET.length > 0,
+    {
+      path: ['RAZORPAY_KEY_ID'],
+      message:
+        'Set RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET and RAZORPAY_WEBHOOK_SECRET',
+    },
+  )
+  /**
+   * Live keys are `rzp_live_*`. Running them outside production is how a real
+   * card gets charged for a test, and the mistake is silent — the payment
+   * succeeds.
+   */
+  .refine(
+    (value) => value.NODE_ENV === 'production' || !value.RAZORPAY_KEY_ID.startsWith('rzp_live_'),
+    { path: ['RAZORPAY_KEY_ID'], message: 'That is a live key. Use rzp_test_* outside production' },
   )
   // The default sender is a .local address. Mail from it is not delivered, it
   // is silently dropped by the receiving side — the worst failure shape there

@@ -4,8 +4,13 @@
  *
  * Everything above this interface — the payments service, the webhook handler,
  * the order write, the refund engine — is provider-agnostic on purpose.
- * Razorpay drops in behind it later by implementing these six methods, and
- * nothing else changes.
+ * Razorpay dropped in behind it by implementing these six methods, and nothing
+ * above the line changed.
+ *
+ * Both implementations stay registered. `PAYMENT_PROVIDER` picks the one that
+ * takes *new* money; every other call site resolves the provider from the row
+ * it is acting on, so a payment taken by one is always refunded by the same
+ * one, whatever the setting says today.
  */
 
 export type CreatePaymentArgs = {
@@ -15,6 +20,14 @@ export type CreatePaymentArgs = {
   /** Ours, for reconciliation from the provider's dashboard. */
   reference: string
   customerEmail?: string | null
+  /**
+   * The delivery address's phone. Prefill only — nothing is decided by it.
+   *
+   * Razorpay's sheet will not show a payment method until it has a contact
+   * number, so an absent one costs the customer a typing step in the middle of
+   * paying. A provider that has no use for it is free to ignore it.
+   */
+  customerPhone?: string | null
 }
 
 export type CreatedPayment = {
@@ -144,5 +157,18 @@ export interface PaymentProvider {
    */
   verifySignature(rawBody: Buffer | string, signature: string | undefined): boolean
 
-  parseWebhook(rawBody: Buffer | string): ParsedWebhook
+  /**
+   * What the body means, or `null` for an event this codebase does not act on.
+   *
+   * The null arm is not politeness. A real provider sends whatever its
+   * dashboard is subscribed to, plus events it adds later without asking —
+   * `order.paid`, a dispute, a settlement. Throwing on those would answer
+   * non-2xx, and a non-2xx is a retry: the provider would redeliver an event we
+   * will never act on until it gives up hours later. `null` means "understood,
+   * nothing to do", and the controller answers 200.
+   *
+   * A body that is genuinely malformed still throws. That distinction is the
+   * point — unknown is not the same as broken.
+   */
+  parseWebhook(rawBody: Buffer | string): ParsedWebhook | null
 }

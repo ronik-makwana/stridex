@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { toast } from 'sonner'
 import { AlertCircle, RotateCcw, X } from 'lucide-react'
 import { ApiError } from '@/lib/api-client'
-import { formatDate, formatMoneyExact } from '@/lib/format'
+import { formatDate, formatMoney } from '@/lib/format'
 import {
   useCancelOrder,
   useRequestReturn,
@@ -138,7 +138,7 @@ function CancelDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         title="Cancel this order"
-        description={`${formatMoneyExact(order.totalAmount)} goes back to how you paid, including delivery.`}
+        description={`${formatMoney(order.totalAmount)} goes back to how you paid, including delivery.`}
       >
         <div className="space-y-4">
           <div className="space-y-1.5">
@@ -378,7 +378,7 @@ export function ActiveRequestNotice({ order }: { order: Order }) {
           <p className="text-sm">{progress.title}</p>
           <p className="text-muted-foreground mt-1 text-sm">{progress.body}</p>
           <p className="text-muted-foreground mt-2 text-xs">
-            Requested {formatDate(request.requestedAt)} · {formatMoneyExact(request.amount)}
+            Requested {formatDate(request.requestedAt)} · {formatMoney(request.amount)}
           </p>
         </div>
         {/*
@@ -412,7 +412,7 @@ export function RefundSummary({ order }: { order: Order }) {
         {order.refunds.map((refund) => (
           <li key={refund.id}>
             <div className="flex items-baseline justify-between">
-              <span className="tabular-nums">{formatMoneyExact(refund.amount)}</span>
+              <span className="tabular-nums">{formatMoney(refund.amount)}</span>
               <span className="text-muted-foreground text-xs">
                 {refund.settledAt ? formatDate(refund.settledAt) : 'On its way'}
               </span>

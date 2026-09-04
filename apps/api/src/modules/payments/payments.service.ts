@@ -23,9 +23,27 @@ import * as checkout from '../checkout/checkout.service.js'
 /** Money leaves for the provider in minor units, never as a float. */
 const toPaise = (amount: Prisma.Decimal): number => amount.times(100).toNumber()
 
+/**
+ * The smallest thing a gateway will take, in paise.
+ *
+ * Razorpay refuses anything under a rupee outright, and every other Indian
+ * gateway draws the line in the same place. It is checked here rather than
+ * left to the provider because a customer who has stacked coupons down to
+ * ₹0.99 deserves to be told which of their codes to drop — not handed
+ * "Order amount less than minimum amount allowed", which is Razorpay talking
+ * to us about a request they never made.
+ */
+const MIN_PAYABLE_PAISE = 100
+
 const withSessionItems = {
   items: true,
   reservations: { where: { status: 'ACTIVE' as const } },
+  // Only for the provider's prefill. Nothing here decides anything by it, and
+  // a provider that ignores it loses nothing.
+  user: { select: { email: true } },
+  // The phone travels with the parcel's address rather than the account: it is
+  // the number for *this* delivery, which is the one a payment sheet wants.
+  shippingAddress: { select: { phone: true } },
 } satisfies Prisma.CheckoutSessionInclude
 
 /**
@@ -115,6 +133,29 @@ async function payableOrThrow(userId: string, checkoutSessionId: string) {
     throw unprocessable('Choose a billing address first')
   }
 
+  /**
+   * The last thing checked, because it is the only one the customer can fix by
+   * changing their mind rather than filling something in.
+   *
+   * A zero total is a different problem from a fractional one and gets its own
+   * message: there is no gateway call that would make it work, and until this
+   * codebase has a path that writes an order without a payment, a cart that
+   * has been discounted to nothing cannot be checked out at all.
+   */
+  const payable = toPaise(session.totalAmount)
+  if (payable <= 0) {
+    throw unprocessable(
+      'This checkout comes to nothing to pay',
+      'Remove a discount code, or add something to the cart.',
+    )
+  }
+  if (payable < MIN_PAYABLE_PAISE) {
+    throw unprocessable(
+      'This checkout is below the ₹1 minimum a card payment can take',
+      'Remove a discount code, or add something to the cart.',
+    )
+  }
+
   return session
 }
 
@@ -148,6 +189,10 @@ export async function create(
     amountInPaise: toPaise(session.totalAmount),
     currency: session.currency,
     reference: session.id,
+    // Saves the customer retyping it into the provider's sheet. Convenience
+    // only — the address a receipt goes to is ours, not theirs.
+    customerEmail: session.user?.email ?? null,
+    customerPhone: session.shippingAddress?.phone ?? null,
   })
 
   try {

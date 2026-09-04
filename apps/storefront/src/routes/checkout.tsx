@@ -10,6 +10,7 @@ import { useCreateAddress } from '@/features/addresses/mutations'
 import type { AddressValues } from '@/features/addresses/schemas'
 import { checkoutApi } from '@/features/checkout/api'
 import { useCheckoutSession, useCountdown } from '@/features/checkout/use-checkout'
+import { isRazorpayPayload, openRazorpaySheet } from '@/features/checkout/razorpay'
 import { addressSummary } from '@/components/address-card'
 import { AddressForm } from '@/components/address-form'
 import { Alert, AlertDescription } from '@/components/ui/alert'
@@ -132,6 +133,13 @@ function Live({
   const [paying, setPaying] = React.useState(false)
   const [problem, setProblem] = React.useState<ApiError | null>(null)
   const [acknowledged, setAcknowledged] = React.useState(false)
+  /**
+   * Anything the provider's own sheet had to say — a declined card, a closed
+   * window, a script that would not load. Separate from `problem`, which is an
+   * `ApiError` from our API and gates Pay behind an acknowledgement; none of
+   * these are our API's answer and none of them un-hold the stock.
+   */
+  const [handoff, setHandoff] = React.useState<string | null>(null)
 
   const rows = addresses ?? []
   const selected = session.shippingAddress
@@ -198,6 +206,7 @@ function Live({
   const pay = async () => {
     setPaying(true)
     setProblem(null)
+    setHandoff(null)
     const idempotencyKey = crypto.randomUUID()
 
     try {
@@ -206,17 +215,45 @@ function Live({
       // session before the provider has said anything, because the thing that
       // would tell us to start watching is the read we are waiting for.
       onPaymentAttempted()
+
       /**
-       * Development stands in for the provider's hosted page. The API signs a
-       * webhook and posts it to its own endpoint, so what runs from here is the
-       * real path — signature check, parse, order write — not a shortcut.
+       * Which provider took the attempt is the server's answer, not this
+       * page's guess: `clientPayload` says who it is and carries whatever that
+       * one needs. The branch is here and nowhere else.
        */
-      await checkoutApi.mockComplete(payment.id, 'success')
-      // Nothing is marked paid here. The page now watches the session, and the
-      // webhook is what changes it (§12).
+      if (isRazorpayPayload(payment.clientPayload)) {
+        const outcome = await openRazorpaySheet(payment.clientPayload, {
+          onFailed: (reason) => setHandoff(reason),
+        })
+        if (outcome === 'dismissed') {
+          /**
+           * They closed the sheet. The attempt is still open at Razorpay and
+           * the session is still PAYMENT_PENDING, so Pay stays disabled — a
+           * second attempt would be answered 409 by design (§7, §25). Saying
+           * so beats a button that looks live and is not.
+           */
+          setHandoff(
+            'You closed the payment window. If you did pay, this page will update on its own — otherwise the items are held until the timer runs out.',
+          )
+        }
+        // Still nothing marked paid. Submitted or dismissed, the webhook is
+        // what changes the session, and the page is already watching it (§12).
+        return
+      }
+
+      /**
+       * Razorpay is the only provider registered, so a payload this page cannot
+       * recognise is a server that has been taught a provider this build has
+       * not. Saying so beats falling through and leaving a spinner on a page
+       * that will never resolve.
+       */
+      throw new Error('This payment method is not supported by this version of the site')
     } catch (error) {
       setPaying(false)
       setProblem(error instanceof ApiError ? error : null)
+      // A provider that would not load or would not open. Not an ApiError, so
+      // `problem` stays null and this is the only thing the customer would see.
+      if (!(error instanceof ApiError) && error instanceof Error) setHandoff(error.message)
     }
   }
 
@@ -447,11 +484,11 @@ function Live({
             <div className="mt-3 border p-4">
               <p className="flex items-center gap-2 text-sm">
                 <Lock className="size-3.5" />
-                Test payments
+                Card, UPI or netbanking
               </p>
               <p className="text-muted-foreground mt-1 text-xs">
-                No card is taken. The API signs a provider webhook and sends it to itself, so the
-                order is created the same way a real payment would create it.
+                Pay opens Razorpay’s secure window. Card details are entered there and never reach
+                this site — your order is confirmed once Razorpay tells us the payment went through.
               </p>
             </div>
           </section>
@@ -628,6 +665,13 @@ function Live({
             {paying && <Spinner />}
             {paying ? 'Confirming your payment…' : `Pay ${formatMoney(session.totalAmount)}`}
           </Button>
+
+          {/*
+            What the provider's own window said. Above the gating hints on
+            purpose: it is the most recent thing that happened, and the hints
+            below are about a button that is now disabled for another reason.
+          */}
+          {handoff && <p className="mt-2 text-xs">{handoff}</p>}
 
           {/* One reason at a time, in the order the page asks for them. */}
           {!selected ? (
