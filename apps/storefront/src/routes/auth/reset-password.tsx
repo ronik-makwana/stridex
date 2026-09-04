@@ -40,7 +40,7 @@ export default function ResetPasswordPage() {
       // The API revoked every session for this account, including any this
       // browser held, so the only correct next screen is a fresh sign-in.
       toast.success('Password updated', { description: 'Sign in with your new password.' })
-      navigate('/login', { replace: true })
+      void navigate('/login', { replace: true })
     } catch (error) {
       setBanner(error instanceof ApiError ? error.message : 'Something went wrong. Try again.')
     }

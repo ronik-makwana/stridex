@@ -38,6 +38,10 @@ import {
  * afterwards, so that every change carries a reason and an author. A grid cell
  * cannot ask why.
  */
+// Only read as a type today, and kept as a value on purpose: it is the single
+// place the editable column set is written down, and `Column` is derived from
+// it rather than repeated.
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const COLUMNS = ['sku', 'price', 'compareAtPrice'] as const
 type Column = (typeof COLUMNS)[number]
 

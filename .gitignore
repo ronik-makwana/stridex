@@ -10,3 +10,9 @@ packages/db/src/generated/
 apps/admin/.vite/
 coverage/
 *.tsbuildinfo
+
+# Playwright
+test-results/
+playwright-report/
+blob-report/
+.playwright/

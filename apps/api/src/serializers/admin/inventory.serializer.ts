@@ -7,7 +7,7 @@ import type {
   User,
   VariantOptionValue,
 } from '@shoe/db'
-import { ADJUST_REASONS, type AdjustReason } from '../../schemas/admin/inventory.schema.js'
+import { ADJUST_REASONS } from '../../schemas/admin/inventory.schema.js'
 
 /** `reference_type` token → the words an operator chose. */
 const REASON_LABELS = new Map<string, string>(

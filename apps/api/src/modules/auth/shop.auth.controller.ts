@@ -36,7 +36,7 @@ const clearShopCookie = (res: Response) =>
 export const register: RequestHandler = async (req, res) => {
   const body = req.body as RegisterInput
 
-  const { user, tokens, verificationToken } = await authService.register(
+  const { user, tokens } = await authService.register(
     {
       email: body.email,
       password: body.password,

@@ -33,7 +33,7 @@ export default function LoginPage() {
     try {
       await login(values.email, values.password)
       const from = (location.state as { from?: { pathname?: string } } | null)?.from
-      navigate(from?.pathname ?? '/', { replace: true })
+      void navigate(from?.pathname ?? '/', { replace: true })
     } catch (error) {
       // A banner above the form, never a field error: attaching "wrong password"
       // to the password input tells an attacker the email was right.

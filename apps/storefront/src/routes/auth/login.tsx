@@ -54,7 +54,7 @@ export default function LoginPage() {
     setBanner(null)
     try {
       await login(values.email, values.password)
-      navigate(redirect, { replace: true })
+      void navigate(redirect, { replace: true })
     } catch (error) {
       // A banner above the form, never a field error. Attaching "wrong
       // password" to the password input tells an attacker the email was right,

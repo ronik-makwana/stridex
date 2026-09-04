@@ -158,7 +158,9 @@ export async function processMail(job: MailJobData): Promise<{ messageId: string
   if (!isTemplateName(job.template)) {
     // Not retryable: five attempts will not make an unknown template known. It
     // still throws, so it lands in the failed set where somebody can see it.
-    throw new Error(`Unknown mail template "${job.template}"`)
+    // `String(...)`: the guard above narrows `job.template` to `never` here, and
+    // a template literal on `never` is a type error rather than a rendering.
+    throw new Error(`Unknown mail template "${String(job.template)}"`)
   }
 
   const render = templates[job.template] as (data: unknown) => ReturnType<typeof templates[TemplateName]>

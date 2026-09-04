@@ -20,6 +20,9 @@
 export const DEFAULT_REDIRECT = '/'
 
 /** Control characters, including the CR/LF used to split a redirect apart. */
+// The literal control characters are the entire point of this check: CR/LF is
+// how a redirect gets split apart.
+// eslint-disable-next-line no-control-regex
 const CONTROL_CHARS = /[\u0000-\u001f\u007f]/
 /** The same characters arriving still percent-encoded. */
 const ENCODED_CONTROL_CHARS = /%(0d|0a|00|09)/i

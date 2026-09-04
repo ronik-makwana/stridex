@@ -33,7 +33,7 @@ export default function ResetPasswordPage() {
     try {
       await authApi.resetPassword({ token, password: values.password })
       toast.success('Password updated. Sign in with your new password.')
-      navigate('/login', { replace: true })
+      void navigate('/login', { replace: true })
     } catch (error) {
       setBanner(error instanceof ApiError ? error.message : 'Something went wrong. Try again.')
     }

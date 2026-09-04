@@ -12,6 +12,21 @@ export const notFoundHandler: RequestHandler = (req, res) => {
   })
 }
 
+/**
+ * A body-parser rejection, identified by the `type` body-parser stamps on it
+ * rather than by `instanceof`: the oversized-body case is a `PayloadTooLargeError`
+ * and the malformed case a `SyntaxError`, and only the `entity.*` prefix
+ * separates both from an ordinary `SyntaxError` thrown somewhere in a service.
+ */
+function isBodyParserError(error: unknown): error is Error & { type: string; status?: number } {
+  return (
+    error instanceof Error &&
+    'type' in error &&
+    typeof (error as { type?: unknown }).type === 'string' &&
+    (error as { type: string }).type.startsWith('entity.')
+  )
+}
+
 /** Turns a Zod issue tree into the flat `{ field: message }` shape forms want. */
 function zodFields(error: ZodError): Record<string, string> {
   const fields: Record<string, string> = {}
@@ -30,6 +45,28 @@ export const errorHandler: ErrorRequestHandler = (err, _req, res, _next) => {
         message: err.message,
         ...(err.fields ? { fields: err.fields } : {}),
         ...(err.reason ? { reason: err.reason } : {}),
+      },
+    })
+    return
+  }
+
+  /**
+   * `express.json()` rejects a malformed or oversized body before any route is
+   * reached, and throws a plain `SyntaxError`/`PayloadTooLargeError` carrying
+   * its own `status` and a `type` of `entity.*`.
+   *
+   * Without this branch they fell through to the generic 500 below, which is
+   * wrong twice over: it logs a client mistake as an unhandled server error,
+   * and on `/api/webhooks/*` it tells the provider to **retry** — a redelivery
+   * loop over a body that will never parse, which is exactly what the 200-on-
+   * anything-unactionable rule in `webhooks.controller.ts` exists to avoid.
+   */
+  if (isBodyParserError(err)) {
+    const tooLarge = err.type === 'entity.too.large'
+    res.status(tooLarge ? 413 : 400).json({
+      error: {
+        code: tooLarge ? 'PAYLOAD_TOO_LARGE' : 'BAD_REQUEST',
+        message: tooLarge ? 'That request body is too large' : 'That request body is not valid JSON',
       },
     })
     return
@@ -61,7 +98,14 @@ export const errorHandler: ErrorRequestHandler = (err, _req, res, _next) => {
     // so the form can render it inline.
     if (err.code === 'P2002') {
       const target = err.meta?.target
-      const columns = Array.isArray(target) ? (target as string[]) : target ? [String(target)] : []
+      // `meta.target` is typed as unknown and is a string or an array of them
+      // in practice. Anything else stringified to '[object Object]' and told
+      // the customer that was already in use.
+      const columns = Array.isArray(target)
+        ? target.filter((column): column is string => typeof column === 'string')
+        : typeof target === 'string'
+          ? [target]
+          : []
       const fields = Object.fromEntries(columns.map((c) => [c, 'Already in use']))
       res.status(409).json({
         error: {
@@ -81,7 +125,10 @@ export const errorHandler: ErrorRequestHandler = (err, _req, res, _next) => {
         error: {
           code: 'UNPROCESSABLE',
           message: 'This record is still referenced by other records',
-          reason: String(err.meta?.field_name ?? 'foreign key constraint'),
+          reason:
+            typeof err.meta?.field_name === 'string'
+              ? err.meta.field_name
+              : 'foreign key constraint',
         },
       })
       return

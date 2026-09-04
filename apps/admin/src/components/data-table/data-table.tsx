@@ -18,7 +18,13 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
  * header rather than a control that would 400.
  */
 declare module '@tanstack/react-table' {
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  /**
+   * The parameters are unused here and the constraint is redundant, and both
+   * have to stay: a module augmentation only merges when its signature matches
+   * the declaration upstream, which is `<TData extends RowData, TValue>`.
+   * Tidying either one silently detaches this from the interface it extends.
+   */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars, @typescript-eslint/no-unnecessary-type-constraint
   interface ColumnMeta<TData extends unknown, TValue> {
     sortKey?: string
     headerClassName?: string
@@ -29,6 +35,12 @@ declare module '@tanstack/react-table' {
 export type SortState = { sort: string; onSortChange: (sort: string) => void }
 
 type DataTableProps<TData> = {
+  /**
+   * `any` for the cell value, deliberately: one table's columns render
+   * different types per column, and the alternative — `unknown` — makes every
+   * `cell` callback cast before it can read the value it was handed.
+   */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   columns: ColumnDef<TData, any>[]
   data: TData[]
   isLoading?: boolean

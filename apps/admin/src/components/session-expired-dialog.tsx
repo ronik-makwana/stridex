@@ -15,7 +15,7 @@ export function SessionExpiredDialog() {
 
   const signInAgain = () => {
     dismissSessionExpired()
-    navigate('/login', { replace: true, state: { from: location } })
+    void navigate('/login', { replace: true, state: { from: location } })
   }
 
   return (

@@ -40,9 +40,14 @@ async function shutdown(signal: string) {
   // Before the connections close: an in-flight sweep finishes rather than
   // being severed halfway through a transaction.
   await stopWorker?.()
-  server.close(async () => {
-    await Promise.allSettled([closeQueues(), prisma.$disconnect(), disconnectRedis()])
-    process.exit(0)
+  // `void` on an inner call rather than an async callback: `server.close`
+  // expects a void-returning function and would drop the promise, so a
+  // rejection in here would surface as an unhandled rejection during shutdown
+  // — the one moment nothing is left to report it.
+  server.close(() => {
+    void Promise.allSettled([closeQueues(), prisma.$disconnect(), disconnectRedis()]).then(() =>
+      process.exit(0),
+    )
   })
   // Do not let a hung connection hold the process open forever.
   setTimeout(() => process.exit(1), 10_000).unref()

@@ -68,7 +68,13 @@ export type ShopErrorCode =
 
 export type ApiErrorBody = {
   error: {
-    code: ShopErrorCode | string
+    /**
+     * `(string & {})` rather than a bare `string`: the union would otherwise
+     * collapse to `string` and the editor would stop suggesting the documented
+     * codes, which are the whole reason `ShopErrorCode` exists. An unknown code
+     * from a newer API still type-checks.
+     */
+    code: ShopErrorCode | (string & {})
     message: string
     /** Field-level messages, keyed by form field name. */
     fields?: Record<string, string>

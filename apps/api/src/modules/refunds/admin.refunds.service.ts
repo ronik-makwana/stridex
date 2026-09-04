@@ -20,7 +20,7 @@ import type {
   RejectReturnInput,
   ReturnListQuery,
 } from '../../schemas/admin/refund.schema.js'
-import { quoteRefund, refundedSoFar, type CountedRefund } from './refund.math.js'
+import { quoteRefund, type CountedRefund } from './refund.math.js'
 import { createRefundRow, keyFor, sendToProvider } from './refunds.service.js'
 
 /**

@@ -410,7 +410,11 @@ function ProductEditor({ product }: { product: Product }) {
             await runSave(values)
             resolve()
           } catch (error) {
-            reject(error)
+            // A caught value is `unknown`. Rejecting with a non-Error loses the
+            // stack and breaks every `instanceof ApiError` further up, so
+            // anything that is not already an Error is wrapped rather than
+            // passed through.
+            reject(error instanceof Error ? error : new Error(String(error)))
           }
         },
         () => reject(new Error('Fix the errors on this form first')),

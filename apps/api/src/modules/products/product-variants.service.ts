@@ -274,7 +274,9 @@ export async function update(
   productId: string,
   variantId: string,
   input: UpdateVariantInput,
-  userId?: string,
+  // Accepted for signature parity with the stock-moving writes; nothing here
+  // touches a quantity, so there is no ledger entry to attribute.
+  _userId?: string,
 ): Promise<VariantRecord> {
   // Ownership check: a variant of another product is a 404 on this URL.
   await findOrThrow(productId, variantId)
@@ -324,7 +326,8 @@ export async function update(
 export async function bulkUpdate(
   productId: string,
   input: BulkVariantInput,
-  userId?: string,
+  // As in `update` above: thresholds only, so no attribution is lost.
+  _userId?: string,
 ): Promise<VariantRecord[]> {
   await assertProductExists(productId)
 

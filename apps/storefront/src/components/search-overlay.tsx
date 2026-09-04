@@ -48,7 +48,7 @@ export function SearchOverlay({ open, onClose }: { open: boolean; onClose: () =>
     event.preventDefault()
     const trimmed = query.trim()
     if (!trimmed) return
-    navigate(`/search?q=${encodeURIComponent(trimmed)}`)
+    void navigate(`/search?q=${encodeURIComponent(trimmed)}`)
     onClose()
   }
 

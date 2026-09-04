@@ -60,7 +60,16 @@ export function parseAttributeFilters(query: Record<string, unknown>): Map<strin
     const attributeId = key.slice(5)
     if (!uuid.test(attributeId)) continue
 
-    const values = String(Array.isArray(raw) ? raw.join(',') : (raw ?? ''))
+    // Express hands query values as a string or an array of them. Anything
+    // else — a nested object from `?attr:x[y]=z` — is not a filter this
+    // understands, and stringifying it produced '[object Object]' to split on.
+    const joined = Array.isArray(raw)
+      ? raw.filter((part): part is string => typeof part === 'string').join(',')
+      : typeof raw === 'string'
+        ? raw
+        : ''
+
+    const values = joined
       .split(',')
       .map((part) => part.trim())
       .filter((part) => uuid.test(part))
