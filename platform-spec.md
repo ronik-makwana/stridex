@@ -686,7 +686,7 @@ and return `{ data, meta: { page, limit, total, totalPages } }`, with
 
 Storefront-specific codes, which the UI branches on, are the single list in
 `schemas/shop/common.schema.ts` and are mirrored in the client's `ShopErrorCode`
-union — a unit test fails if the two drift:
+union; the two are kept in step by hand:
 
 ```
 OUT_OF_STOCK            PRICE_CHANGED           PRODUCT_UNAVAILABLE

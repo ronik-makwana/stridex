@@ -1,9 +1,7 @@
 node_modules
 dist
 build
-coverage
 packages/db/src/generated
 packages/db/prisma/migrations
 package-lock.json
-scripts/verify/screenshots
 *.tsbuildinfo

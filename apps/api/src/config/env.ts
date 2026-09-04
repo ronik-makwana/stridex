@@ -2,7 +2,7 @@ import { z } from 'zod'
 
 // Fail at boot, not at the first request that needs a missing secret.
 const envSchema = z.object({
-  NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
+  NODE_ENV: z.enum(['development', 'production']).default('development'),
   PORT: z.coerce.number().int().positive().default(4000),
 
   DATABASE_URL: z.string().min(1),
@@ -136,7 +136,7 @@ const envSchema = z.object({
    */
   RUN_WORKER_INLINE: z
     .stringbool()
-    .default(process.env.NODE_ENV !== 'production' && process.env.NODE_ENV !== 'test'),
+    .default(process.env.NODE_ENV !== 'production'),
 
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info'),
 })

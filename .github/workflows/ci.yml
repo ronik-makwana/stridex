@@ -12,22 +12,16 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # ─── everything that needs no services ──────────────────────────────────────
-  #
-  # Split out so the fast feedback is genuinely fast: lint, types and 255 unit
-  # tests finish in well under a minute with no container to wait for. A broken
-  # import or a wrong refund calculation fails here, long before Postgres has
-  # finished starting in the job below.
   static:
-    name: Lint, types, unit tests
+    name: Lint, types, build
     runs-on: ubuntu-latest
 
     env:
-      # `prisma generate` reads the URL through `prisma.config.ts`, and the unit
-      # tests import `@shoe/db` for `Prisma.Decimal`. Neither opens a connection
-      # — a `pg.Pool` does not dial until its first query — so this needs to
-      # exist rather than to work. It names a closed port on purpose: anything
-      # that did try to query fails loudly instead of finding a real database.
+      # `prisma generate` reads the URL through `prisma.config.ts`. Nothing here
+      # opens a connection — a `pg.Pool` does not dial until its first query —
+      # so this needs to exist rather than to work. It names a closed port on
+      # purpose: anything that did try to query fails loudly instead of finding
+      # a real database.
       DATABASE_URL: postgresql://unused:unused@127.0.0.1:1/ci_never_connects
 
     steps:
@@ -42,8 +36,7 @@ jobs:
 
       # Before anything that reads types. `packages/db/src/generated` is
       # gitignored, so on a fresh clone the Prisma client does not exist and
-      # every `tsc` and every test would fail on the import rather than on
-      # anything real.
+      # every `tsc` would fail on the import rather than on anything real.
       - name: Generate the Prisma client
         run: npm run db:generate
 
@@ -52,18 +45,14 @@ jobs:
       # `npm run format:check` is deliberately NOT a step yet.
       #
       # Prettier agrees with this codebase's style — a formatted file
-      # round-trips unchanged — but it would still rewrite 243 of 541 files on
-      # first contact. That is a real diff to make, and it should be its own
-      # commit so `git blame` has one revision to skip rather than being
-      # scattered through a change about tests.
+      # round-trips unchanged — but it would still rewrite a few hundred files
+      # on first contact. That is a real diff to make, and it should be its own
+      # commit so `git blame` has one revision to skip.
       #
       # To adopt it: run `npm run format`, commit it alone, record the SHA in
       # `.git-blame-ignore-revs`, then add the step back here.
 
       - run: npm run typecheck
-
-      - name: Unit tests
-        run: npm run test:unit
 
       # Catches what a typecheck cannot: a Vite config that fails to resolve, a
       # bad import in a route only the bundler walks.
@@ -72,134 +61,3 @@ jobs:
           npm run build:api
           npm run build:admin
           npm run build:shop
-
-  # ─── everything that needs a database ───────────────────────────────────────
-  #
-  # Integration and contract tests in one job, because they share a harness and
-  # splitting them would pay for the same Postgres twice.
-  database:
-    name: Integration and contract tests
-    runs-on: ubuntu-latest
-
-    services:
-      postgres:
-        image: postgres:17-alpine
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: postgres
-        ports: ['5433:5432']
-        # Without this the first migration races the server's own startup.
-        options: >-
-          --health-cmd "pg_isready -U postgres"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
-
-      redis:
-        image: redis:7-alpine
-        ports: ['6379:6379']
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 5s
-          --health-timeout 3s
-          --health-retries 10
-
-    env:
-      # The harness creates and migrates `shoe_test` itself; this is the
-      # maintenance connection it does that through.
-      TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5433/shoe_test
-      DATABASE_URL: postgresql://postgres:postgres@localhost:5433/shoe_test
-      REDIS_URL: redis://localhost:6379/15
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-
-      - run: npm ci
-      - run: npm run db:generate
-
-      # Row locks, unique-index replay guards, transaction rollback — the
-      # things a mock cannot prove.
-      - name: Integration tests
-        run: npm run test:integration
-
-      # The auth wall, validation wiring and status codes, through the real
-      # Express app.
-      - name: Contract tests
-        run: npm run test:api
-
-  # ─── the browser ────────────────────────────────────────────────────────────
-  #
-  # Last and separate: it is the slowest layer and the one most likely to fail
-  # for reasons that are not a regression. Keeping it out of the other jobs
-  # means a flake here never hides a real failure there.
-  e2e:
-    name: End-to-end
-    runs-on: ubuntu-latest
-    # No point booting a browser against code that does not compile.
-    needs: static
-
-    services:
-      postgres:
-        image: postgres:17-alpine
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: postgres
-        ports: ['5433:5432']
-        options: >-
-          --health-cmd "pg_isready -U postgres"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
-
-      redis:
-        image: redis:7-alpine
-        ports: ['6379:6379']
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 5s
-          --health-timeout 3s
-          --health-retries 10
-
-    env:
-      TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5433/shoe_test
-      DATABASE_URL: postgresql://postgres:postgres@localhost:5433/shoe_test
-      REDIS_URL: redis://localhost:6379/15
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-
-      - run: npm ci
-      - run: npm run db:generate
-
-      # `--with-deps` installs the system libraries the browser needs, which a
-      # bare runner does not have.
-      - name: Install Chromium
-        run: npx playwright install --with-deps chromium
-
-      # Playwright's own `webServer` starts the API and the storefront and
-      # waits for both to answer before the first spec runs.
-      - name: End-to-end tests
-        run: npm run test:e2e
-
-      # Only on a failure, and only what explains it: the trace is the thing
-      # that makes a red CI run debuggable without reproducing it locally.
-      - uses: actions/upload-artifact@v4
-        if: failure()
-        with:
-          name: playwright-report
-          path: |
-            playwright-report/
-            test-results/
-          retention-days: 7

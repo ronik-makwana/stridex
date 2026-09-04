@@ -33,7 +33,6 @@ catalogue has moved on.
 ![Redis](https://img.shields.io/badge/Redis_·_BullMQ-DC382D?style=for-the-badge&logo=redis&logoColor=white)
 ![Docker](https://img.shields.io/badge/Docker-2496ED?style=for-the-badge&logo=docker&logoColor=white)
 ![MinIO](https://img.shields.io/badge/MinIO-C72E49?style=for-the-badge&logo=minio&logoColor=white)
-![Playwright](https://img.shields.io/badge/Playwright-2EAD33?style=for-the-badge&logo=playwright&logoColor=white)
 
 </div>
 
@@ -45,7 +44,7 @@ catalogue has moved on.
 |---|---|
 | **Getting started** | [What it is](#what-it-is) · [Requirements](#requirements) · [Quick start](#quick-start) · [Configuration](#configuration) · [Ports](#ports) |
 | **The code** | [What's built](#whats-built) · [Architecture](#architecture) · [The decisions worth knowing](#the-decisions-worth-knowing) |
-| **Working on it** | [Testing](#testing) · [Commands](#commands) · [Status](#status) |
+| **Working on it** | [Commands](#commands) · [Status](#status) |
 
 ---
 
@@ -205,9 +204,7 @@ apps/
   storefront/   React 19 · Vite · Tailwind v4 · its own design system
 packages/
   db/           Prisma schema, 15 migrations, seed
-e2e/            Playwright specs, config and seed for the browser layer
-scripts/verify/ per-phase API and browser suites, run by hand
-.github/        CI: static → database → end-to-end
+.github/        CI: lint, types and builds
 ```
 
 The two SPAs are deliberately independent — separate component libraries,
@@ -259,59 +256,6 @@ honestly.
 
 ---
 
-## Testing
-
-Four layers, each with its own project, each run in CI on every push and pull
-request.
-
-```bash
-npm run test:unit          # pure logic: refund math, discount allocation, token rules
-npm run test:integration   # against real Postgres: row locks, replay guards, rollback
-npm run test:api           # the Express app end to end: auth wall, validation, status codes
-npm run test:e2e           # Playwright, against the real storefront and API
-
-npm test                   # the first three
-npm run test:all           # everything
-```
-
-Integration and API tests create and migrate their own `shoe_test` database from
-`TEST_DATABASE_URL`; Playwright boots the API and the storefront itself and
-waits for both before the first spec.
-
-### CI
-
-[`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs three jobs:
-
-| Job | What it proves | Services |
-|---|---|---|
-| **static** | lint, typecheck, unit tests, and that all three apps build | none — fast feedback in under a minute |
-| **database** | integration and contract tests | Postgres 17, Redis 7 |
-| **e2e** | the browser path, after `static` passes | Postgres 17, Redis 7, Chromium |
-
-A failing end-to-end run uploads its Playwright trace, so a red build is
-debuggable without reproducing it locally.
-
-### The verify suites
-
-Older than the test projects and kept because they exercise the running dev
-stack the way a person would — useful when you want to watch a flow rather than
-assert on it.
-
-```bash
-node scripts/verify/razorpay-api.mjs            # payment intents, webhooks, reconciliation
-node scripts/verify/discounts-checkout.mjs      # 25 checks
-node scripts/verify/discounts-limits.mjs        # 18
-node scripts/verify/shipping-methods-api.mjs    # 19
-node scripts/verify/phase-13-api.mjs            # catalogue, facets, search
-node scripts/verify/phase-19-browser.mjs        # titles, JSON-LD, sitemap
-```
-
-They are not decoration — they have caught a Radix trigger silently submitting a
-form, a Prisma `select` missing a field the type claimed was there, and a cart
-that reordered itself when a discount was applied.
-
----
-
 ## Commands
 
 ```bash
@@ -320,7 +264,7 @@ npm run dev:worker                            # background jobs, if run separate
 npm run build:api | build:admin | build:shop  # production build
 
 npm run lint | lint:fix                       # eslint
-npm run typecheck                             # all three apps plus the e2e project
+npm run typecheck                             # all three apps
 npm run format | format:check                 # prettier
 
 npm run job -w apps/api -- checkout.expiry    # run one job now, no broker

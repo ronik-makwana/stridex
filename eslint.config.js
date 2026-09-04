@@ -28,9 +28,7 @@ export default tseslint.config(
       '**/dist/**',
       '**/node_modules/**',
       'packages/db/src/generated/**',
-      '**/coverage/**',
       '**/*.tsbuildinfo',
-      'scripts/verify/screenshots/**',
     ],
   },
 
@@ -169,20 +167,14 @@ export default tseslint.config(
     languageOptions: { globals: globals.node },
   },
 
-  // ─── the verification scripts ──────────────────────────────────────────────
+  // ─── the operational scripts ───────────────────────────────────────────────
   {
     /**
-     * Playwright drivers, and half of each file runs in the *browser*: the
-     * bodies of `page.evaluate()` are serialised and executed there, which is
-     * why `document` is referenced in a file Node runs.
-     *
-     * They are also one-shot scripts written to prove a phase worked, not
-     * shipped code. Held to correctness rules, not to tidiness — an unused
-     * binding in a script that has already served its purpose is not worth a
-     * red build.
+     * One-shot maintenance and deployment scripts, not shipped code. Held to
+     * correctness rules, not to tidiness — an unused binding in a script that
+     * has already served its purpose is not worth a red build.
      */
     files: ['scripts/**/*.mjs'],
-    languageOptions: { globals: { ...globals.node, ...globals.browser } },
     rules: {
       'no-unused-vars': 'warn',
       'no-empty': 'warn',
