@@ -22,10 +22,12 @@ services:
     name: stridex-api
     runtime: node
     plan: free
-    # Nearest region to a Razorpay/INR audience. Change it if yours differs —
-    # but keep the Key Value instance below in the same one, or every cache
-    # read and every queue poll pays a cross-region round trip.
-    region: singapore
+    # Ohio, because the Neon project — Postgres *and* object storage — is in
+    # us-east-2, and Neon Object Storage is only offered in us-east-2 and
+    # eu-central-1. Putting the API nearer an INR audience would put it a
+    # Pacific round trip away from its own database on every query, which costs
+    # far more than the last mile to the browser does.
+    region: ohio
     branch: main
     healthCheckPath: /health
 
@@ -72,25 +74,31 @@ services:
       - key: RUN_WORKER_INLINE
         value: true
 
-      # ─── object storage (Cloudflare R2) ───────────────────────────────────
+      # ─── object storage (Neon Object Storage) ─────────────────────────────
       #
-      # The bucket is created and made public in the R2 dashboard, once. This
-      # process must not try to manage it: R2 does not implement
+      # The bucket is created public_read in the Neon Console, once, and this
+      # process must not try to manage it: Neon returns 501 for
       # PutBucketPolicy, and `ensureBucket` is awaited by every upload.
+      #
+      # Access level is Console-only — there is no CLI or S3 call that changes
+      # it — so a bucket created without --access-level public_read serves 403
+      # to every visitor while the API itself works perfectly.
       - key: S3_MANAGED_BUCKET
         value: true
       - key: S3_REGION
-        value: auto # R2's only region
+        value: us-east-2
       - key: S3_ENDPOINT
-        sync: false # https://<account-id>.r2.cloudflarestorage.com
+        sync: false # https://<branch-id>.storage.c-1.us-east-2.aws.neon.tech
       - key: S3_BUCKET
         sync: false # stridex
       - key: S3_ACCESS_KEY
-        sync: false # R2 API token → Access Key ID
+        sync: false # nak_live_…
       - key: S3_SECRET_KEY
-        sync: false # R2 API token → Secret Access Key
+        sync: false # nsk_live_…
+      # The same host as S3_ENDPOINT plus the bucket. Neon serves public objects
+      # path-style, so the bucket segment belongs here and not in the endpoint.
       - key: S3_PUBLIC_URL
-        sync: false # https://pub-<hash>.r2.dev  — no bucket segment
+        sync: false # https://<branch-id>.storage.c-1.us-east-2.aws.neon.tech/stridex
 
       # ─── where the SPAs live ──────────────────────────────────────────────
       #
@@ -152,7 +160,9 @@ services:
   - type: keyvalue
     name: stridex-keyvalue
     plan: free
-    region: singapore
+    # Must match the web service's region, or every cache read and every queue
+    # poll pays a cross-region round trip.
+    region: ohio
     # Free instances are reachable only from inside the Render network, which
     # is what an empty allow list means here.
     ipAllowList: []
