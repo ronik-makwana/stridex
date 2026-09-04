@@ -53,6 +53,10 @@ services:
 
       - key: REDIS_URL
         fromService:
+          # Required by the blueprint validator, whatever the docs example
+          # shows: without it, "services[0].envVars[2].fromService.type — empty
+          # but required".
+          type: keyvalue
           name: stridex-keyvalue
           property: connectionString
 
