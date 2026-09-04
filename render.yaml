@@ -1,0 +1,155 @@
+# Render Blueprint — the API and its Redis, on the free plan.
+#
+# What is deliberately NOT here:
+#
+#   Postgres. Render's free Postgres is deleted 30 days after creation, which
+#   for a portfolio project means the demo dies a month after anyone links to
+#   it. The database lives on Neon instead (free, no expiry, resumes from idle
+#   in well under a second), and `DATABASE_URL` is pasted in below.
+#
+#   A worker service. Render background workers start at the paid tier, so the
+#   worker runs inside the API process via RUN_WORKER_INLINE. That is safe here
+#   and only here: the free plan runs exactly one instance, and the reason the
+#   worker was split out was N instances each running N sweeps. One instance,
+#   one worker, no overlap.
+#
+# The two static sites are on Vercel rather than here — see apps/*/vercel.json
+# for why (the SPAs proxy /api to this service so the session cookie stays
+# same-origin).
+
+services:
+  - type: web
+    name: stridex-api
+    runtime: node
+    plan: free
+    # Nearest region to a Razorpay/INR audience. Change it if yours differs —
+    # but keep the Key Value instance below in the same one, or every cache
+    # read and every queue poll pays a cross-region round trip.
+    region: singapore
+    branch: main
+    healthCheckPath: /health
+
+    # `--include=dev` is load-bearing. Render sets NODE_ENV=production for Node
+    # services, and `npm ci` then skips devDependencies — which is where tsup,
+    # prisma and typescript live. Without the flag the build fails on a missing
+    # binary rather than on anything real.
+    #
+    # Migrations run here rather than at start-up so that a bad migration fails
+    # the deploy and leaves the previous version serving, instead of crash-
+    # looping a released instance.
+    buildCommand: npm ci --include=dev && npm run db:deploy && npm run build:api
+    startCommand: node apps/api/dist/server.js
+
+    envVars:
+      - key: NODE_ENV
+        value: production
+
+      # PORT is injected by Render. Setting it here would override the port the
+      # platform is actually routing to, and the service would never pass a
+      # health check.
+
+      - key: DATABASE_URL
+        sync: false # Neon → Connection string (the pooled one)
+
+      - key: REDIS_URL
+        fromService:
+          name: stridex-keyvalue
+          type: keyvalue
+          property: connectionString
+
+      # Generated once, by Render, and never seen by anyone. Rotating them logs
+      # every session out, which is the intended effect of rotating them.
+      - key: JWT_ACCESS_SECRET
+        generateValue: true
+      - key: JWT_REFRESH_SECRET
+        generateValue: true
+
+      # One instance on the free plan, so the worker rides along. See the note
+      # at the top of this file before changing it.
+      - key: RUN_WORKER_INLINE
+        value: true
+
+      # ─── object storage (Cloudflare R2) ───────────────────────────────────
+      #
+      # The bucket is created and made public in the R2 dashboard, once. This
+      # process must not try to manage it: R2 does not implement
+      # PutBucketPolicy, and `ensureBucket` is awaited by every upload.
+      - key: S3_MANAGED_BUCKET
+        value: true
+      - key: S3_REGION
+        value: auto # R2's only region
+      - key: S3_ENDPOINT
+        sync: false # https://<account-id>.r2.cloudflarestorage.com
+      - key: S3_BUCKET
+        sync: false # stridex
+      - key: S3_ACCESS_KEY
+        sync: false # R2 API token → Access Key ID
+      - key: S3_SECRET_KEY
+        sync: false # R2 API token → Secret Access Key
+      - key: S3_PUBLIC_URL
+        sync: false # https://pub-<hash>.r2.dev  — no bucket segment
+
+      # ─── where the SPAs live ──────────────────────────────────────────────
+      #
+      # These build the links inside email, so they are the Vercel URLs a
+      # customer clicks — not this service's URL.
+      - key: STOREFRONT_URL
+        sync: false
+      - key: ADMIN_URL
+        sync: false
+      # Same two origins. The browser never actually needs these while the SPAs
+      # proxy /api through their own domain, but anything calling this service
+      # directly does, and a wrong value here fails in a way that looks like an
+      # auth bug.
+      - key: CORS_ORIGINS
+        sync: false
+
+      # ─── payments ─────────────────────────────────────────────────────────
+      - key: RAZORPAY_KEY_ID
+        sync: false # rzp_test_*
+      - key: RAZORPAY_KEY_SECRET
+        sync: false
+      - key: RAZORPAY_WEBHOOK_SECRET
+        sync: false # from the webhook, not the key. They are different strings.
+      - key: RAZORPAY_DISPLAY_NAME
+        value: StrideX
+
+      # ─── mail ─────────────────────────────────────────────────────────────
+      #
+      # Required in production: with SMTP_HOST empty the app logs every
+      # verification link and delivers none, and every job still reports
+      # success. Brevo's free tier is 300/day and verifies a single sender
+      # address without owning a domain.
+      - key: SMTP_HOST
+        sync: false # smtp-relay.brevo.com
+      - key: SMTP_PORT
+        value: 587
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASSWORD
+        sync: false
+      - key: MAIL_FROM
+        sync: false # must not be @stridex.local — boot refuses it
+
+      - key: LOG_LEVEL
+        value: info
+
+  # Redis, not Upstash.
+  #
+  # Upstash's free tier is 500K commands/month, and BullMQ does not spend
+  # commands per job — it spends them per poll. Two workers blocking on their
+  # queues burn roughly a million a month sitting completely idle, so the free
+  # tier would lapse within days of deploying and the API refuses to boot
+  # without Redis. Render's free Key Value has no command cap.
+  #
+  # It also has no persistence, which is survivable: schedulers are re-created
+  # from the registry on every boot (`syncSchedulers`), the cache refills from
+  # Postgres, and the rate limiters start empty. The one real loss is queued
+  # mail at the moment of a restart.
+  - type: keyvalue
+    name: stridex-keyvalue
+    plan: free
+    region: singapore
+    # Free instances are reachable only from inside the Render network, which
+    # is what an empty allow list means here.
+    ipAllowList: []

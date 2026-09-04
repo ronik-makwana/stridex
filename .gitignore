@@ -16,3 +16,6 @@ test-results/
 playwright-report/
 blob-report/
 .playwright/
+
+# Catalogue dump produced by scripts/deploy/migrate-catalog.sh
+catalog.sql

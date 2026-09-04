@@ -51,6 +51,21 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, import.meta.dirname, "");
   const site = (env.VITE_SITE_URL ?? "").replace(/\/$/, "");
 
+  /**
+   * Hosts the dev and preview servers will answer to, beyond localhost.
+   *
+   * Vite refuses requests carrying a Host header it does not recognise, which is
+   * a DNS-rebinding defence and the right default. It also means a tunnel —
+   * `*.trycloudflare.com` in front of this port — gets a 403 and no explanation.
+   * Comma-separated; a leading dot matches subdomains.
+   *
+   *   VITE_ALLOWED_HOSTS=.trycloudflare.com
+   */
+  const allowedHosts = (env.VITE_ALLOWED_HOSTS ?? "")
+    .split(",")
+    .map((host) => host.trim())
+    .filter(Boolean);
+
   return {
     plugins: [react(), tailwindcss(), robotsTxt(site)],
     resolve: {
@@ -59,7 +74,8 @@ export default defineConfig(({ mode }) => {
       // path to break, not by remembering not to.
       alias: { "@": path.resolve(import.meta.dirname, "./src") },
     },
-    server: { port: 5174, strictPort: true },
+    server: { port: 5174, strictPort: true, allowedHosts },
+    preview: { port: 5174, strictPort: true, allowedHosts },
     build: {
       rollupOptions: {
         output: {

@@ -31,6 +31,14 @@ export const minio: Client = new Client({
   ...parseEndpoint(env.S3_ENDPOINT),
   accessKey: env.S3_ACCESS_KEY,
   secretKey: env.S3_SECRET_KEY,
+  /**
+   * Stated rather than discovered. Left unset, the client resolves the region
+   * by calling `GetBucketLocation` before it can sign anything — an extra round
+   * trip against MinIO, and on R2 a call whose answer (`auto`) is not a region
+   * the discovery path expects. Signing then fails in a way that reads as a
+   * credentials problem.
+   */
+  region: env.S3_REGION,
 })
 
 /**
@@ -60,8 +68,18 @@ let ensured: Promise<void> | null = null
  * there. Memoised, so concurrent uploads on a cold start do not race to create
  * the same bucket; a failure clears the memo so the next request retries
  * rather than caching a broken state forever.
+ *
+ * With `S3_MANAGED_BUCKET` the whole thing is a no-op, because on a hosted
+ * bucket every line of it is either unnecessary or fatal: `bucketExists` needs
+ * a permission the scoped tokens those hosts issue do not include, and
+ * `setBucketPolicy` is refused outright — R2 does not implement
+ * `PutBucketPolicy` at all. Since uploads await this, a throw here is an upload
+ * that fails for a reason that has nothing to do with the file. The bucket is
+ * created and made readable in the host's dashboard instead, once.
  */
 export function ensureBucket(): Promise<void> {
+  if (env.S3_MANAGED_BUCKET) return Promise.resolve()
+
   ensured ??= (async () => {
     const exists = await minio.bucketExists(BUCKET)
     if (!exists) {
@@ -77,9 +95,16 @@ export function ensureBucket(): Promise<void> {
   return ensured
 }
 
-/** Where a browser fetches an object from. */
+/**
+ * Where a browser fetches an object from.
+ *
+ * The bucket is not appended here: it is part of `S3_PUBLIC_URL`, which
+ * defaults to `S3_ENDPOINT/S3_BUCKET` and so is unchanged for MinIO. A host
+ * that serves objects from a bucket-less origin — R2's `pub-<id>.r2.dev` —
+ * cannot be expressed any other way.
+ */
 export function publicUrl(key: string): string {
-  return `${env.S3_PUBLIC_URL.replace(/\/+$/, '')}/${BUCKET}/${key}`
+  return `${env.S3_PUBLIC_URL.replace(/\/+$/, '')}/${key}`
 }
 
 /**
@@ -89,7 +114,7 @@ export function publicUrl(key: string): string {
  */
 export function keyFromUrl(url: string | null | undefined): string | undefined {
   if (!url) return undefined
-  const prefix = `${env.S3_PUBLIC_URL.replace(/\/+$/, '')}/${BUCKET}/`
+  const prefix = `${env.S3_PUBLIC_URL.replace(/\/+$/, '')}/`
   if (!url.startsWith(prefix)) return undefined
   return url.slice(prefix.length) || undefined
 }

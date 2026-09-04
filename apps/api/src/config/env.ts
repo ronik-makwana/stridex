@@ -24,10 +24,36 @@ const envSchema = z.object({
   S3_ACCESS_KEY: z.string().min(1).default('minio'),
   S3_SECRET_KEY: z.string().min(1).default('minio123'),
   S3_REGION: z.string().default('us-east-1'),
-  // Where browsers reach the objects. Split from S3_ENDPOINT because in
-  // production the API talks to storage over a private address while the
-  // <img> tags point at a CDN.
+  /**
+   * Where browsers reach the objects, **including the bucket segment** if the
+   * host uses one. Split from S3_ENDPOINT because in production the API talks
+   * to storage over one address while the <img> tags point at another.
+   *
+   * The bucket is part of this value rather than appended to it, because the
+   * two shapes genuinely differ and neither is derivable from the other:
+   *
+   *   MinIO / R2 S3 endpoint  https://host/stridex/products/x.jpg
+   *   R2 public bucket        https://pub-<id>.r2.dev/products/x.jpg
+   *
+   * Defaulted to `S3_ENDPOINT/S3_BUCKET`, which is the path-style form MinIO
+   * serves — so development needs no setting at all.
+   */
   S3_PUBLIC_URL: z.string().optional(),
+
+  /**
+   * The bucket already exists and this process must not try to manage it.
+   *
+   * Every hosted S3 lookalike worth using on a free plan — R2, Supabase,
+   * Backblaze — refuses `PutBucketPolicy`; R2 does not implement it at all.
+   * `ensureBucket` would throw on the policy call, and because uploads await
+   * it, every upload would fail with an error about bucket administration
+   * rather than about the upload.
+   *
+   * So on those hosts you create the bucket once in their dashboard, make it
+   * publicly readable there, and set this. MinIO in development leaves it off
+   * and keeps creating and configuring its own bucket on boot.
+   */
+  S3_MANAGED_BUCKET: z.stringbool().default(false),
 
   /**
    * Required, like DATABASE_URL. Redis is infrastructure, not an enhancement:
@@ -165,7 +191,9 @@ if (!parsed.success) {
 
 export const env = {
   ...parsed.data,
-  S3_PUBLIC_URL: parsed.data.S3_PUBLIC_URL || parsed.data.S3_ENDPOINT,
+  S3_PUBLIC_URL:
+    parsed.data.S3_PUBLIC_URL ||
+    `${parsed.data.S3_ENDPOINT.replace(/\/+$/, '')}/${parsed.data.S3_BUCKET}`,
 }
 export const isProduction = env.NODE_ENV === 'production'
 export const isDevelopment = env.NODE_ENV === 'development'
