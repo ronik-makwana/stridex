@@ -45,9 +45,8 @@ const OrderDetailPage = lazyRoute(() => import('./account/order-detail'))
 const ProfilePage = lazyRoute(() => import('./account/profile'))
 
 /**
- * Route tree per `shoe-storefront-final-spec.md` §3.15. Only the Phase 11 paths
- * are mounted; the catalog, cart and checkout routes land with the phases that
- * build them, so a half-built screen is never reachable from a URL.
+ * The storefront's route tree. A path is mounted only once the screen behind it
+ * is built, so a half-built screen is never reachable from a URL.
  *
  * Three groups, and the nesting is what enforces them:
  *   - `/verify-email` is public even to a signed-in customer, because the link

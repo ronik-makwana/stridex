@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="322" height="90" viewBox="0 0 322 90" role="img" aria-label="StrideX">
+  <title>StrideX</title>
+  <!--
+    The app's own logo, drawn the way the storefront draws it: the `wordmark`
+    utility (uppercase, semibold, 0.18em tracking) inside `wordmark-boxed` (a
+    2px rule at the theme's corner radius). The ink is the storefront's
+    foreground token written literally, because a README image cannot read a
+    CSS variable or the host page's theme; the dark twin lives beside this file.
+
+    `textLength` with `lengthAdjust="spacing"` pins the tracking to a fixed
+    advance, so the box still fits the word on a machine that resolves the font
+    stack differently.
+  -->
+  <rect x="3" y="3" width="316" height="84" rx="8" fill="none" stroke="#0f0f11" stroke-width="6" />
+  <text x="161" y="62" fill="#0f0f11" text-anchor="middle" textLength="252" lengthAdjust="spacing"
+        font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif"
+        font-size="48" font-weight="600">STRIDEX</text>
+</svg>

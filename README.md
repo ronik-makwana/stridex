@@ -1,6 +1,12 @@
 <div align="center">
 
-# 👟 StrideX
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/logo-dark.svg">
+  <img src="docs/assets/logo-light.svg" alt="StrideX" width="300">
+</picture>
+
+<br />
+<br />
 
 **A shoe store, built properly.**
 
@@ -23,6 +29,8 @@ catalogue has moved on.
 ![TanStack Query](https://img.shields.io/badge/TanStack_Query-FF4154?style=for-the-badge&logo=reactquery&logoColor=white)
 ![Zod](https://img.shields.io/badge/Zod-3E67B1?style=for-the-badge&logo=zod&logoColor=white)
 
+![Razorpay](https://img.shields.io/badge/Razorpay-0C2451?style=for-the-badge&logo=razorpay&logoColor=white)
+![Redis](https://img.shields.io/badge/Redis_·_BullMQ-DC382D?style=for-the-badge&logo=redis&logoColor=white)
 ![Docker](https://img.shields.io/badge/Docker-2496ED?style=for-the-badge&logo=docker&logoColor=white)
 ![MinIO](https://img.shields.io/badge/MinIO-C72E49?style=for-the-badge&logo=minio&logoColor=white)
 ![Playwright](https://img.shields.io/badge/Playwright-2EAD33?style=for-the-badge&logo=playwright&logoColor=white)
@@ -33,10 +41,11 @@ catalogue has moved on.
 
 ## Contents
 
-- [What it is](#what-it-is) · [Quick start](#quick-start) · [Ports](#ports)
-- [What's built](#whats-built) · [Architecture](#architecture)
-- [The decisions worth knowing](#the-decisions-worth-knowing)
-- [Verification](#verification) · [Commands](#commands) · [Status](#status)
+| | |
+|---|---|
+| **Getting started** | [What it is](#what-it-is) · [Requirements](#requirements) · [Quick start](#quick-start) · [Configuration](#configuration) · [Ports](#ports) |
+| **The code** | [What's built](#whats-built) · [Architecture](#architecture) · [The decisions worth knowing](#the-decisions-worth-knowing) |
+| **Working on it** | [Testing](#testing) · [Commands](#commands) · [Status](#status) |
 
 ---
 
@@ -47,13 +56,23 @@ the API both talk to.
 
 | | |
 |---|---|
-| 🛍️ **Storefront** | Browse, filter, search, review, cart, wishlist, checkout, account |
-| 🧑‍💼 **Admin** | Catalogue, variants, inventory, orders, payments, customers, reviews, discounts |
-| ⚙️ **API** | 24 modules, ~47 tables, money and stock decided server-side, always |
+| 🛍️ **Storefront** | Browse, filter, search, review, cart, wishlist, checkout, pay, account, cancel, return |
+| 🧑‍💼 **Admin** | Catalogue, variants, inventory, orders, payments, refunds, customers, reviews, discounts |
+| ⚙️ **API** | 27 modules, 50 tables, money and stock decided server-side, always |
 
-Every rule in [`ecommerce_frontend_backend_rules.md`](ecommerce_frontend_backend_rules.md)
-about inventory, payments, idempotency and order state is implemented and
-verified — 23 of 27 fully, with tax and refunds the known gaps.
+The rules in [`ecommerce_frontend_backend_rules.md`](ecommerce_frontend_backend_rules.md)
+about inventory, payments, idempotency and order state are implemented and
+verified — 26 of 27, with tax (rule 21) the one remaining gap.
+
+---
+
+## Requirements
+
+| | |
+|---|---|
+| **Node** | 22 or newer — enforced by `engines`, and what CI runs |
+| **Docker** | for Postgres, Redis, MinIO and Mailpit via `docker-compose.yml` |
+| **A Razorpay test account** | keys are free; checkout will not start without them |
 
 ---
 
@@ -61,8 +80,9 @@ verified — 23 of 27 fully, with tax and refunds the known gaps.
 
 ```bash
 npm install
-cp .env.example apps/api/.env       # fill in the two JWT secrets
+cp .env.example apps/api/.env       # then fill in the secrets — see Configuration
 npm run services:up                 # postgres, minio, redis, mailpit
+npm run db:generate                 # the Prisma client is gitignored
 npm run db:migrate
 npm run db:seed
 ```
@@ -86,6 +106,31 @@ Seeded only when `NODE_ENV !== 'production'`.
 | `admin@shoe.com` | `Admin@12345` | the real admin |
 | `shopper@shoe.com` | `Customer@12345` | CUSTOMER — must be refused at the admin door |
 | `benched@shoe.com` | `Customer@12345` | SUSPENDED STAFF — must get 403, not 401 |
+
+---
+
+## Configuration
+
+`.env.example` is the whole surface, annotated. Three groups need your attention
+before anything works end to end:
+
+| | |
+|---|---|
+| 🔑 **JWT secrets** | `JWT_ACCESS_SECRET` and `JWT_REFRESH_SECRET` — 32 characters minimum, and different from each other |
+| 💳 **Razorpay** | `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`, `RAZORPAY_WEBHOOK_SECRET`. All three are required — the API refuses to boot without them, rather than failing at the first Pay on a 401 nobody can read. A `rzp_live_*` key outside production is refused too |
+| 🗄️ **Infrastructure** | `DATABASE_URL` and `REDIS_URL` are validated at startup and have no fallback path |
+
+Everything is parsed through a Zod schema in
+[`apps/api/src/config/env.ts`](apps/api/src/config/env.ts) before the server
+opens a port, so a missing or malformed variable is a startup error with a name
+in it — never a `undefined` that surfaces three screens into a checkout.
+
+### Webhooks in development
+
+Razorpay has to reach your machine. `npm run tunnel -w apps/api` opens a
+Cloudflare tunnel to :4000; point the dashboard's webhook URL at
+`https://<tunnel>/api/webhooks/razorpay` and use the same secret you put in
+`RAZORPAY_WEBHOOK_SECRET`.
 
 ---
 
@@ -113,8 +158,10 @@ Seeded only when `NODE_ENV !== 'production'`.
 - **Product** — gallery, variant picker with per-combination stock, spec table, related products, reviews
 - **Reviews** — write, edit and delete your own; verified-purchase badges
 - **Cart & wishlist** — drawer, quantity limits, revalidation on load
-- **Checkout** — one page: contact, delivery address, shipping method, billing address, payment. Discount codes, a live summary, and a ten-minute stock hold
+- **Checkout** — one page: contact, delivery address, shipping method, billing address, payment. Discount codes, a live summary, a ten-minute stock hold, and Razorpay Checkout for the payment itself
 - **Account** — profile, address book, order history with per-order detail
+- **After the sale** — cancel an unshipped order yourself, or request a return inside the window; both refund through the provider
+- **SEO** — per-route titles and meta, product JSON-LD, a generated `sitemap.xml` and `robots.txt`
 
 </details>
 
@@ -125,6 +172,7 @@ Seeded only when `NODE_ENV !== 'production'`.
 - **Collections** — manual and dynamic, with a rule builder and live preview
 - **Inventory** — stock levels, adjustments with a reason ledger, low-stock views
 - **Orders & payments** — read screens over real orders, a status machine that refuses illegal moves, payment records and reconciliation
+- **Refunds** — full and partial, against the original payment, with a reason trail and provider reconciliation
 - **Discounts** — product, order and shipping codes with eligibility, minimums, usage limits, combination rules and scheduling
 - **Customers** — accounts, their orders, addresses and reviews
 - **Reviews & testimonials** — moderation for the first, curation for the second
@@ -138,8 +186,9 @@ Seeded only when `NODE_ENV !== 'production'`.
 ```
 account      addresses    attributes   auth         brands       cart
 categories   checkout     collections  customers    dashboard    discounts
-home         inventory    orders       payments     products     reviews
-search       tags         testimonials uploads      variant-options  wishlist
+home         inventory    mail         orders       payments     products
+refunds      reviews      search       seo          tags         testimonials
+uploads      variant-options           wishlist
 ```
 
 </details>
@@ -155,8 +204,10 @@ apps/
   admin/        React 19 · Vite · Tailwind v4 · shadcn · TanStack Query
   storefront/   React 19 · Vite · Tailwind v4 · its own design system
 packages/
-  db/           Prisma schema, 14 migrations, seed
-scripts/verify/ API and Playwright suites, one per phase
+  db/           Prisma schema, 15 migrations, seed
+e2e/            Playwright specs, config and seed for the browser layer
+scripts/verify/ per-phase API and browser suites, run by hand
+.github/        CI: static → database → end-to-end
 ```
 
 The two SPAs are deliberately independent — separate component libraries,
@@ -174,9 +225,10 @@ never a `SELECT` followed by an `UPDATE`. Holds carry a ten-minute TTL, released
 lazily when anyone looks and by a sweep for the sessions nobody returns to.
 
 **Payments cannot double-charge.** An `Idempotency-Key` unique index settles
-duplicates by insert-and-catch, not check-then-insert. The provider's **webhook**
-is the only thing that creates an order; the browser saying "success" creates
-nothing. Payments the provider never confirms are reconciled on a schedule.
+duplicates by insert-and-catch, not check-then-insert. Razorpay's signed
+**webhook** is the only thing that creates an order; the browser saying
+"success" creates nothing. Payments the provider never confirms are reconciled
+on a schedule.
 
 **Orders are snapshots.** Title, SKU, options, unit price and discount code are
 copied onto `order_items` at purchase. An order renders correctly in five years,
@@ -185,6 +237,11 @@ after the product has been renamed, repriced and archived.
 **Money is decided in one function.** `quoteSession()` computes subtotal, line
 discounts, order discount, shipping and shipping discount in that order, because
 each feeds the next. The client renders strings and adds nothing up.
+
+**Refunds are counted, not trusted.** What has already gone back is summed from
+the refund rows before a new one is allowed, so a partial refund issued twice
+cannot exceed the captured amount — and a refund made in the Razorpay dashboard
+is reconciled back into the same ledger.
 
 **The access token never touches storage.** It lives in a module variable and
 dies with the tab; the refresh token is an httpOnly cookie scoped per app.
@@ -195,20 +252,58 @@ single-flights refreshes so ten parallel 401s cost exactly one refresh call.
 customer at the admin door all return the same `401`, with a real argon2 verify
 against a dummy hash so the timing matches.
 
+**The process says what it can do.** `/health` stays 200 while the process is
+alive — a load balancer should not evict a healthy instance because a dependency
+blinked. `/ready` is the one that checks the database and Redis and answers
+honestly.
+
 ---
 
-## Verification
+## Testing
 
-Every phase ships an executable check — an API suite, a Playwright suite, or
-both. They run against the dev servers and clean up after themselves.
+Four layers, each with its own project, each run in CI on every push and pull
+request.
 
 ```bash
+npm run test:unit          # pure logic: refund math, discount allocation, token rules
+npm run test:integration   # against real Postgres: row locks, replay guards, rollback
+npm run test:api           # the Express app end to end: auth wall, validation, status codes
+npm run test:e2e           # Playwright, against the real storefront and API
+
+npm test                   # the first three
+npm run test:all           # everything
+```
+
+Integration and API tests create and migrate their own `shoe_test` database from
+`TEST_DATABASE_URL`; Playwright boots the API and the storefront itself and
+waits for both before the first spec.
+
+### CI
+
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs three jobs:
+
+| Job | What it proves | Services |
+|---|---|---|
+| **static** | lint, typecheck, unit tests, and that all three apps build | none — fast feedback in under a minute |
+| **database** | integration and contract tests | Postgres 17, Redis 7 |
+| **e2e** | the browser path, after `static` passes | Postgres 17, Redis 7, Chromium |
+
+A failing end-to-end run uploads its Playwright trace, so a red build is
+debuggable without reproducing it locally.
+
+### The verify suites
+
+Older than the test projects and kept because they exercise the running dev
+stack the way a person would — useful when you want to watch a flow rather than
+assert on it.
+
+```bash
+node scripts/verify/razorpay-api.mjs            # payment intents, webhooks, reconciliation
 node scripts/verify/discounts-checkout.mjs      # 25 checks
 node scripts/verify/discounts-limits.mjs        # 18
-node scripts/verify/discounts-shipping.mjs      # 18
-node scripts/verify/discounts-order.mjs         # 17
 node scripts/verify/shipping-methods-api.mjs    # 19
 node scripts/verify/phase-13-api.mjs            # catalogue, facets, search
+node scripts/verify/phase-19-browser.mjs        # titles, JSON-LD, sitemap
 ```
 
 They are not decoration — they have caught a Radix trigger silently submitting a
@@ -224,9 +319,15 @@ npm run dev:api | dev:admin | dev:shop        # development
 npm run dev:worker                            # background jobs, if run separately
 npm run build:api | build:admin | build:shop  # production build
 
+npm run lint | lint:fix                       # eslint
+npm run typecheck                             # all three apps plus the e2e project
+npm run format | format:check                 # prettier
+
 npm run job -w apps/api -- checkout.expiry    # run one job now, no broker
 npm run mail:test -w apps/api -- you@x.com    # send a test email through the queue
+npm run tunnel -w apps/api                    # expose :4000 for provider webhooks
 
+npm run db:generate    # the Prisma client — gitignored, needed after a fresh clone
 npm run db:migrate     # create and apply a migration
 npm run db:deploy      # apply pending migrations
 npm run db:seed        # admin + dev fixtures
@@ -240,30 +341,38 @@ npm run services:down
 
 ## Status
 
-**Working end to end**: browse → cart → checkout → reserve stock → pay → webhook
-→ order, with discounts, and the admin to run it.
+**Working end to end**: browse → cart → checkout → reserve stock → pay with
+Razorpay → webhook → order → cancel or return → refund, with discounts, email at
+every step, and the admin to run it.
 
 **Known gaps**, in the order they'd block going live:
 
 | | |
 |---|---|
-| 📧 **Email** | Sending. Verification, reset, welcome, order confirmation and shipped all go out through the queue. No bounce handling, and the shipped email carries no tracking number because orders have no field for one |
-| 💸 **Refunds** | The statuses exist; no money moves |
-| 💳 **Real gateway** | The provider is a mock that signs its own webhooks — the path is real, the gateway isn't |
-| 🧾 **Tax** | `taxAmount` is written zero, by decision |
-| 🤖 **CI** | The verify suites are excellent and entirely manual |
-| 🔭 **Monitoring** | A 500 in production would be invisible |
-| 🔍 **SEO** | Phase 19 — page titles, JSON-LD, sitemap, error boundaries |
+| 🧾 **Tax** | `taxAmount` is written zero, by decision. It is a column and a line in the summary waiting for a rate table |
+| 📦 **Tracking** | Orders have no tracking-number field, so the shipped email tells the customer it shipped and nothing more |
+| 🔭 **Monitoring** | Structured pino logs and `/health` + `/ready` exist; nothing ships them anywhere. A 500 in production would be recorded and unwatched |
+| 📧 **Email** | Sends through the queue — verification, reset, welcome, order confirmation, shipped, cancelled. No bounce handling |
+| 🎨 **Formatting** | `format:check` is deliberately not a CI step yet: Prettier agrees with this codebase but would rewrite 243 files on first contact, and that deserves its own commit |
 
-Redis now backs the rate-limit counters and the job queue, so a rate limit and
-a scheduled sweep each mean the same thing across every API process — where
-before, N instances ran N sweeps per interval. `REDIS_URL` is **required** and validated at boot
-alongside `DATABASE_URL` — there is no fallback path, because the behaviour it
-would fall back to (a login limit that means something different on every
-instance) is wrong rather than merely slower. Redis going down at runtime is a
-separate matter and is handled: requests pass, loudly logged, never 500. Still
-to come, in `platform-implementation-order.md`: the job runtime, the email
-queue, and the read caches.
+Redis backs the rate-limit counters and the job queue, so a rate limit and a
+scheduled sweep each mean the same thing across every API process — where
+before, N instances ran N sweeps per interval. `REDIS_URL` is **required** and
+validated at boot alongside `DATABASE_URL`; there is no fallback path, because
+the behaviour it would fall back to (a login limit that means something
+different on every instance) is wrong rather than merely slower. Redis going
+down at runtime is a separate matter and is handled: requests pass, loudly
+logged, never 500.
+
+---
+
+## Reference
+
+| Document | What's in it |
+|---|---|
+| [`ecommerce_frontend_backend_rules.md`](ecommerce_frontend_backend_rules.md) | The 27 rules this build is measured against |
+| [`repo-structure.md`](repo-structure.md) | Where everything lives and why |
+| [`platform-spec.md`](platform-spec.md) | Every table and every endpoint, admin and storefront |
 
 <div align="center">
 <br />

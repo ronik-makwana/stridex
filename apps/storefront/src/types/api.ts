@@ -54,8 +54,11 @@ export type Paginated<T> = {
  * renders as a generic message — a `switch` that grows a case for an
  * undocumented code is how the storefront ends up coupled to an API internal.
  *
- * Only OUT_OF_STOCK and PRODUCT_UNAVAILABLE can fire before Phase 15; the rest
- * are declared now so checkout adds no new shape to this file.
+ * **Mirrors `SHOP_ERROR_CODES` in `apps/api/src/schemas/shop/common.schema.ts`,
+ * and nothing enforces that.** The three order codes below were missing here
+ * long after the API started returning them, which cost nothing only because no
+ * screen had tried to branch on one yet — `ApiError.is()` takes this union, so
+ * the attempt would not have compiled. When the API adds a code, add it here.
  */
 export type ShopErrorCode =
   | 'OUT_OF_STOCK'
@@ -65,6 +68,19 @@ export type ShopErrorCode =
   | 'CHECKOUT_ALREADY_COMPLETED'
   | 'QUANTITY_EXCEEDED'
   | 'COUPON_INVALID'
+  /**
+   * The order has moved past the point where the customer decides — a
+   * cancellation that arrived after the parcel shipped, possibly by a second.
+   */
+  | 'ORDER_NOT_CANCELLABLE'
+  /** Something is already open on this order. Show it rather than the form. */
+  | 'REFUND_ALREADY_REQUESTED'
+  /**
+   * Past the return window, or the order never got far enough to have one. The
+   * deadline is recomputed server-side on every read, so a page that decided
+   * "returnable" a while ago finds out here.
+   */
+  | 'RETURN_WINDOW_CLOSED'
 
 export type ApiErrorBody = {
   error: {
