@@ -154,6 +154,31 @@ async function handlePaymentEvent(
 
 async function capturePayment(paymentId: string, event: ParsedPaymentWebhook): Promise<WebhookOutcome> {
   return prisma.$transaction(async (tx) => {
+    /**
+     * Lock the payment row before reading anything from it.
+     *
+     * A plain `findUnique` here does **not** serialise two deliveries, which is
+     * what this code assumed for a long time: at READ COMMITTED both
+     * transactions read `PENDING`, both fall through the status check below,
+     * and both go on to create an order. Nothing downstream catches it —
+     * `checkout_sessions.order_id` is unique, but that only decides which of
+     * the two orders the session ends up pointing at, not how many exist.
+     *
+     * It is not a theoretical race. `payments.reconcile` runs every five
+     * minutes and calls this same function, so a webhook landing mid-sweep is
+     * two concurrent captures of one payment.
+     *
+     * `FOR UPDATE` makes the second delivery wait for the first to commit; it
+     * then reads `CAPTURED` and returns the order the first one made. Raw,
+     * because Prisma has no first-class row lock — the same reason and the same
+     * shape as `applyStockMove`.
+     *
+     * Locking the payment *first*, before any inventory row, is also what keeps
+     * this deadlock-free: every path through a capture takes the two in that
+     * order.
+     */
+    await tx.$queryRaw`SELECT id FROM payments WHERE id = CAST(${paymentId} AS uuid) FOR UPDATE`
+
     const payment = await tx.payment.findUniqueOrThrow({
       where: { id: paymentId },
       include: {
@@ -169,8 +194,8 @@ async function capturePayment(paymentId: string, event: ParsedPaymentWebhook): P
       },
     })
 
-    // Re-read inside the transaction: two deliveries racing each other both
-    // passed the check outside it, and only this one is serialised.
+    // Now genuinely serialised by the lock above: a second delivery reaches
+    // this line only after the first has committed its order.
     if (payment.status === 'CAPTURED') {
       return { handled: true, action: 'CAPTURED', orderId: payment.orderId ?? undefined }
     }

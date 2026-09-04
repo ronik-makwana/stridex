@@ -1,6 +1,7 @@
 import { execFileSync } from 'node:child_process'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { Redis } from 'ioredis'
 import { Client } from 'pg'
 
 /**
@@ -66,4 +67,39 @@ export default async function globalSetup(): Promise<void> {
   })
 
   execFileSync('npx', ['tsx', 'e2e/seed.ts'], { cwd: root, env, stdio: 'pipe' })
+
+  await flushTestCache()
+}
+
+/**
+ * Empty the test Redis database before the servers start.
+ *
+ * The seed truncates and recreates every product, so anything the previous run
+ * left in the catalogue caches now describes rows that no longer exist. The
+ * worst shape of that is a cached **empty** home page — the API answers 200
+ * with no products, the grid renders nothing, and three specs fail pointing at
+ * the storefront when the fault is a stale key.
+ *
+ * Database 15, which is the one `playwright.config.ts` points the API at.
+ * Flushing here rather than in the API keeps the flush somewhere that cannot
+ * ever run against database 0.
+ */
+async function flushTestCache(): Promise<void> {
+  const url = fromEnv('REDIS_URL', 'redis://127.0.0.1:6379/15')
+
+  if (!/\/(1[0-5]|[1-9])$/.test(new URL(url).pathname)) {
+    throw new Error(`Refusing to flush Redis at "${url}": that is not a test database index.`)
+  }
+
+  const redis = new Redis(url, { lazyConnect: true, maxRetriesPerRequest: 1 })
+  try {
+    await redis.connect()
+    await redis.flushdb()
+  } catch (error) {
+    // Not fatal. A cache the tests could not clear is a slower first request
+    // and, at worst, one stale page — not a reason to refuse to run.
+    process.stderr.write(`could not flush the test cache: ${(error as Error).message}\n`)
+  } finally {
+    redis.disconnect()
+  }
 }

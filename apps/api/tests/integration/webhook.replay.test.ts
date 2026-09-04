@@ -138,26 +138,19 @@ describe('the same event delivered twice', () => {
   })
 
   /**
-   * ─── a known bug, deliberately recorded as a failing expectation ──────────
+   * The concurrent case, which sequential replay does not cover at all.
    *
-   * `it.fails` means: this assertion does *not* hold today, and the suite is
-   * green because of that. When the race is fixed this test starts failing,
-   * which is the signal to delete the `.fails` and keep the assertion.
+   * Both deliveries pass the pre-transaction status check before either
+   * commits, so the only thing that separates them is the `FOR UPDATE` lock
+   * `capturePayment` takes on the payment row. Without it each inserts its own
+   * order — and nothing downstream catches that, because the unique index on
+   * `checkout_sessions.order_id` only decides which order the session points
+   * at, not how many exist.
    *
-   * Sequentially, replay is safe — every test above passes. Concurrently, two
-   * deliveries both pass the `status === 'CAPTURED'` check before either
-   * commits, and each inserts its own `orders` row. Nothing stops them: the
-   * unique index is on `checkout_sessions.order_id`, which only decides which
-   * order the session ends up pointing at, not how many orders exist.
-   *
-   * This is reachable in production without an unusual provider: the
-   * `payments.reconcile` job runs every five minutes and calls this very
-   * function, so a webhook landing mid-sweep is the same race.
-   *
-   * What is *not* damaged is asserted in the next test, and it is the reason
-   * this is a duplicate-record bug rather than an incident.
+   * Reachable without an unusual provider: `payments.reconcile` runs every five
+   * minutes and calls the same function.
    */
-  it.fails('creates one order even when both deliveries race — KNOWN BUG', async () => {
+  it('creates one order even when both deliveries race', async () => {
     const { payment, total } = await createPaidCheckout()
     const event = captured(payment.providerPaymentId, toPaise(total))
 
@@ -167,6 +160,36 @@ describe('the same event delivered twice', () => {
     ])
 
     expect(await prisma.order.count()).toBe(1)
+    expect(await prisma.orderItem.count()).toBe(1)
+  })
+
+  /** Two is the pair that races; more is the pair plus a reconcile sweep. */
+  it('creates one order under several simultaneous deliveries', async () => {
+    const { payment, total } = await createPaidCheckout()
+    const event = captured(payment.providerPaymentId, toPaise(total))
+
+    await Promise.allSettled(
+      Array.from({ length: 6 }, () => handleProviderEvent('razorpay', event)),
+    )
+
+    expect(await prisma.order.count()).toBe(1)
+  })
+
+  /**
+   * All six must be told about the *same* order. Returning "handled" with no
+   * order id would leave the confirmation email unqueued for that delivery.
+   */
+  it('reports the same order to every racing delivery', async () => {
+    const { payment, total } = await createPaidCheckout()
+    const event = captured(payment.providerPaymentId, toPaise(total))
+
+    const outcomes = await Promise.all(
+      Array.from({ length: 4 }, () => handleProviderEvent('razorpay', event)),
+    )
+
+    const orderIds = new Set(outcomes.map((o) => (o as { orderId?: string }).orderId))
+    expect(orderIds.size).toBe(1)
+    expect([...orderIds][0]).toBeTruthy()
   })
 
   /**

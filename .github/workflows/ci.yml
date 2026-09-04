@@ -110,7 +110,7 @@ jobs:
       # maintenance connection it does that through.
       TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5433/shoe_test
       DATABASE_URL: postgresql://postgres:postgres@localhost:5433/shoe_test
-      REDIS_URL: redis://localhost:6379
+      REDIS_URL: redis://localhost:6379/15
 
     steps:
       - uses: actions/checkout@v4
@@ -170,7 +170,7 @@ jobs:
     env:
       TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5433/shoe_test
       DATABASE_URL: postgresql://postgres:postgres@localhost:5433/shoe_test
-      REDIS_URL: redis://localhost:6379
+      REDIS_URL: redis://localhost:6379/15
 
     steps:
       - uses: actions/checkout@v4

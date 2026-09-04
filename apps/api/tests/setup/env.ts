@@ -27,7 +27,19 @@ process.env.JWT_REFRESH_SECRET = 'test-refresh-secret-11111111111111111'
 process.env.ACCESS_TOKEN_TTL = '15m'
 process.env.REFRESH_TOKEN_TTL = '7d'
 
-process.env.REDIS_URL ??= 'redis://127.0.0.1:6379'
+/**
+ * Database **15**, not the default 0, and this is isolation rather than tidiness.
+ *
+ * The cache namespaces are global strings — `cache:v1:home:page` and friends —
+ * so tests sharing Redis with a running `npm run dev` write into the same keys
+ * the development storefront reads. That is not hypothetical: it happened. The
+ * e2e stack booted against an empty database, cached an empty home page under
+ * that exact key, and the dev storefront then served an empty home page too,
+ * until the TTL expired.
+ *
+ * Redis ships with 16 databases; 15 is the far end and nothing else uses it.
+ */
+process.env.REDIS_URL ??= 'redis://127.0.0.1:6379/15'
 
 /**
  * A `rzp_test_` prefix on purpose: `config/env.ts` refuses a `rzp_live_` key

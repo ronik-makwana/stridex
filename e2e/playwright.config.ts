@@ -43,7 +43,13 @@ const apiEnv = {
   NODE_ENV: 'development',
   PORT: String(API_PORT),
   DATABASE_URL: TEST_DATABASE_URL,
-  REDIS_URL: fromEnv('REDIS_URL', 'redis://127.0.0.1:6379'),
+  /**
+   * Database 15, never the default 0. The cache namespaces are global strings,
+   * so sharing Redis with a running `npm run dev` means these tests write into
+   * the keys the development storefront reads — which is how an e2e run against
+   * an empty database left the dev home page blank until its TTL expired.
+   */
+  REDIS_URL: fromEnv('REDIS_URL', 'redis://127.0.0.1:6379/15'),
   JWT_ACCESS_SECRET: 'e2e-access-secret-0000000000000000000',
   JWT_REFRESH_SECRET: 'e2e-refresh-secret-111111111111111111',
   CORS_ORIGINS: SHOP_URL,
