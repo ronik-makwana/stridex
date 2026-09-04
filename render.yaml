@@ -54,7 +54,6 @@ services:
       - key: REDIS_URL
         fromService:
           name: stridex-keyvalue
-          type: keyvalue
           property: connectionString
 
       # Generated once, by Render, and never seen by anyone. Rotating them logs
